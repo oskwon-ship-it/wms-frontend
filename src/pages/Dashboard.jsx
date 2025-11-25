@@ -1,6 +1,6 @@
-// src/pages/Dashboard.jsx (주문 시간 표시 수정 버전)
+// src/pages/Dashboard.jsx (비밀번호 변경 기능 추가 완료)
 import React, { useEffect, useState } from 'react';
-import { Layout, Menu, Card, Row, Col, Statistic, Table, Tag, Button, Modal, Form, Input, message } from 'antd';
+import { Layout, Menu, Card, Row, Col, Statistic, Table, Tag, Button, Modal, Form, Input, message, Popconfirm } from 'antd';
 import { AppstoreOutlined, DropboxOutlined, SettingOutlined, LogoutOutlined, PlusOutlined, CarOutlined, ScanOutlined, BarcodeOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
@@ -10,11 +10,18 @@ const { Header, Sider, Content } = Layout;
 const Dashboard = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]); 
+  
+  // 팝업창들 상태 관리
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addForm] = Form.useForm(); 
   const [isShipModalOpen, setIsShipModalOpen] = useState(false);
   const [shipForm] = Form.useForm();
   const [shippingTargetId, setShippingTargetId] = useState(null); 
+  
+  // [NEW] 비밀번호 변경 팝업 상태
+  const [isSettingModalOpen, setIsSettingModalOpen] = useState(false);
+  const [settingForm] = Form.useForm();
+
   const [isAdmin, setIsAdmin] = useState(false);
   const [userEmail, setUserEmail] = useState('');
 
@@ -27,8 +34,7 @@ const Dashboard = () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUserEmail(user.email);
-      // 관리자 이메일 확인 (본인 이메일로 수정 가능)
-      if (user.email === 'kos@cbg.com') {
+      if (user.email === 'admin@wms.com') {
         setIsAdmin(true); 
       } else {
         setIsAdmin(false); 
@@ -89,13 +95,36 @@ const Dashboard = () => {
     }
   };
 
+  // [NEW] 비밀번호 변경 함수
+  const handleUpdatePassword = async (values) => {
+    const { error } = await supabase.auth.updateUser({ 
+      password: values.new_password 
+    });
+
+    if (error) {
+      message.error('비밀번호 변경 실패: ' + error.message);
+    } else {
+      message.success('비밀번호가 성공적으로 변경되었습니다!');
+      setIsSettingModalOpen(false);
+      settingForm.resetFields();
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate('/');
   };
 
+  // 메뉴 클릭 이벤트 처리
+  const handleMenuClick = (e) => {
+    if (e.key === '3') { // '설정' 버튼 키
+      setIsSettingModalOpen(true);
+    } else if (e.key === '4') { // '로그아웃' 버튼 키
+      handleLogout();
+    }
+  };
+
   const columns = [
-    // [수정됨] 날짜와 시간까지 예쁘게 보여주는 코드
     { 
       title: '주문 시간', 
       dataIndex: 'created_at', 
@@ -103,14 +132,9 @@ const Dashboard = () => {
       render: (text) => {
         if (!text) return '-';
         const date = new Date(text);
-        // 한국 시간 형식으로 변환 (예: 2024. 05. 21. 14:30)
         return date.toLocaleString('ko-KR', { 
-          year: 'numeric', 
-          month: '2-digit', 
-          day: '2-digit', 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: false // 24시간제
+          year: 'numeric', month: '2-digit', day: '2-digit', 
+          hour: '2-digit', minute: '2-digit', hour12: false 
         });
       }
     },
@@ -142,7 +166,18 @@ const Dashboard = () => {
     <Layout style={{ minHeight: '100vh' }}>
       <Sider theme="light" collapsible>
         <div style={{ height: 32, margin: 16, background: 'rgba(0, 0, 0, 0.2)', textAlign: 'center', lineHeight: '32px', fontWeight: 'bold' }}>WMS 파트너스</div>
-        <Menu theme="light" mode="inline" defaultSelectedKeys={['1']} items={[{ key: '1', icon: <AppstoreOutlined />, label: '대시보드' }, { key: '2', icon: <DropboxOutlined />, label: '주문 관리' }, { key: '3', icon: <SettingOutlined />, label: '설정' }, { key: '4', icon: <LogoutOutlined />, label: '로그아웃', onClick: handleLogout }]} />
+        <Menu 
+          theme="light" 
+          mode="inline" 
+          defaultSelectedKeys={['1']} 
+          onClick={handleMenuClick} // 메뉴 클릭 시 함수 실행
+          items={[
+            { key: '1', icon: <AppstoreOutlined />, label: '대시보드' },
+            { key: '2', icon: <DropboxOutlined />, label: '주문 관리' },
+            { key: '3', icon: <SettingOutlined />, label: '설정 (비밀번호 변경)' }, // 이름 변경
+            { key: '4', icon: <LogoutOutlined />, label: '로그아웃' }
+          ]} 
+        />
       </Sider>
       <Layout className="site-layout">
         <Header style={{ padding: '0 20px', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -166,6 +201,7 @@ const Dashboard = () => {
             
             <Table columns={columns} dataSource={orders} rowKey="id" pagination={{ pageSize: 5 }} />
 
+            {/* 1. 주문 등록 팝업 */}
             <Modal title="새로운 주문 등록" open={isAddModalOpen} onCancel={() => setIsAddModalOpen(false)} footer={null}>
               <Form form={addForm} layout="vertical" onFinish={handleAddOrder}>
                 <Form.Item label="고객사 이름" name="customer" rules={[{ required: true }]}><Input placeholder="예: 김철수" /></Form.Item>
@@ -175,6 +211,7 @@ const Dashboard = () => {
               </Form>
             </Modal>
 
+            {/* 2. 운송장 입력 팝업 */}
             <Modal title="🚚 출고 처리 (운송장 입력)" open={isShipModalOpen} onCancel={() => setIsShipModalOpen(false)} footer={null}>
               <Form form={shipForm} layout="vertical" onFinish={handleShipConfirm}>
                 <p>배송 정보를 입력하면 출고 완료 처리됩니다.</p>
@@ -182,6 +219,23 @@ const Dashboard = () => {
                   <Input placeholder="예: 6458-1234-5678" size="large" />
                 </Form.Item>
                 <Button type="primary" htmlType="submit" block size="large">출고 확정 및 저장</Button>
+              </Form>
+            </Modal>
+
+            {/* 3. [NEW] 비밀번호 변경 팝업 */}
+            <Modal title="🔒 비밀번호 변경" open={isSettingModalOpen} onCancel={() => setIsSettingModalOpen(false)} footer={null}>
+              <Form form={settingForm} layout="vertical" onFinish={handleUpdatePassword}>
+                <p>보안을 위해 새로운 비밀번호를 입력해주세요. (6자리 이상)</p>
+                <Form.Item 
+                  label="새로운 비밀번호" 
+                  name="new_password" 
+                  rules={[{ required: true, min: 6, message: '6자리 이상 입력해주세요!' }]}
+                >
+                  <Input.Password placeholder="새 비밀번호 입력" />
+                </Form.Item>
+                <Button type="primary" htmlType="submit" block>
+                  변경하기
+                </Button>
               </Form>
             </Modal>
           </div>
