@@ -11,9 +11,9 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
   const [previewData, setPreviewData] = useState([]);
   const [uploading, setUploading] = useState(false);
   
-  // ★ 1. 양식 다운로드 함수 (Template Download)
+  // 1. 양식 다운로드 함수 (Template Download)
   const handleDownloadTemplate = () => {
-      // 엑셀 헤더 정의 (사용자가 입력해야 하는 컬럼)
+      // 엑셀 헤더 정의
       const headers = [
           '고객사', 
           '바코드', 
@@ -59,12 +59,14 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
     setUploading(true);
 
     try {
-      // 엑셀 한글 제목 -> DB 영어 컬럼명 변환 (필수 3가지만 저장)
+      // 엑셀 한글 제목 -> DB 영어 컬럼명 변환
       const formattedData = previewData.map(item => ({
         customer_name: item['고객사'],
         barcode: item['바코드'],
         product_name: item['상품명'],
-        created_at: new Date()
+        created_at: new Date(),
+        // ★★★ CRITICAL FIX: 'status' 컬럼의 기본값(처리대기)을 추가
+        status: '처리대기' 
       }));
 
       const { error } = await supabase
@@ -80,7 +82,8 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
       onClose();
     } catch (error) {
       console.error(error);
-      message.error('에러 발생: ' + error.message);
+      // 에러 메시지가 사용자에게 더 잘 보이도록 표시
+      message.error('등록 실패. 콘솔(F12)을 확인하거나 관리자에게 문의하세요.'); 
     } finally {
       setUploading(false);
     }
@@ -105,7 +108,6 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
         </Button>
       ]}
     >
-      {/* ★ 4. 다운로드 버튼 배치 */}
       <Button 
           onClick={handleDownloadTemplate} 
           style={{ marginBottom: 15 }} 
