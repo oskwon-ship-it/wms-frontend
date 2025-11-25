@@ -15,13 +15,7 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
   const handleDownloadTemplate = () => {
       // 엑셀 헤더 정의
       const headers = [
-          '고객사', 
-          '바코드', 
-          '상품명', 
-          '수량', 
-          '수취인명',
-          '연락처',
-          '배송지 주소'
+          '고객사', '바코드', '상품명', '수량', '수취인명', '연락처', '배송지 주소'
       ]; 
       
       const ws = XLSX.utils.aoa_to_sheet([headers]);
@@ -65,8 +59,8 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
         barcode: item['바코드'],
         product_name: item['상품명'],
         created_at: new Date(),
-        // ★★★ CRITICAL FIX: 'status' 컬럼의 기본값(처리대기)을 추가
-        status: '처리대기' 
+        status: '처리대기', // 필수 컬럼 FIX 1
+        tracking_number: null // 필수 컬럼 FIX 2: 일단 NULL 처리
       }));
 
       const { error } = await supabase
@@ -82,8 +76,7 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
       onClose();
     } catch (error) {
       console.error(error);
-      // 에러 메시지가 사용자에게 더 잘 보이도록 표시
-      message.error('등록 실패. 콘솔(F12)을 확인하거나 관리자에게 문의하세요.'); 
+      message.error('등록 실패: 데이터 형식 오류. 콘솔(F12)을 확인하세요.'); 
     } finally {
       setUploading(false);
     }
