@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, Select, message, Row, Col, Card, Statistic, Tag } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, Select, message, Row, Col, Card, Statistic, Tag, Popconfirm } from 'antd';
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 
@@ -45,7 +45,7 @@ const Dashboard = () => {
         if (profile) {
             setCustomerName(profile.customer_name);
         } else if (!isAdministrator) {
-            // 관리자가 아닌데 프로필이 없으면 에러
+            // 프로필 없으면 에러 없이 넘어감 (관리자가 아닐 경우)
         }
 
         fetchOrders();
@@ -57,7 +57,7 @@ const Dashboard = () => {
             .select('*')
             .order('created_at', { ascending: false });
 
-        // ★★★ [수정됨] DB 컬럼명 'customer' 사용
+        // 관리자가 아니면 본인 고객사 주문만 보도록 필터링
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
              query = query.eq('customer', nameToFilter); 
@@ -84,14 +84,9 @@ const Dashboard = () => {
 
     const handleNewOrder = async (values) => {
         try {
-            // ★★★ [수정됨] 여기가 핵심입니다! ★★★
             const orderData = {
-                // values.customer_input -> 폼에서 입력받은 값 (아래 Form.Item name 참조)
                 customer: isAdmin ? values.customer_input : customerName, 
-                
-                // values.product_input -> 폼에서 입력받은 값
                 product: values.product_input,
-                
                 barcode: values.barcode,
                 created_at: new Date(),
                 status: '처리대기',
@@ -111,6 +106,22 @@ const Dashboard = () => {
         }
     };
 
+    // ★★★ [추가됨] 주문 상태 변경 함수 (관리자용)
+    const handleUpdateStatus = async (id) => {
+        try {
+            const { error } = await supabase
+                .from('orders')
+                .update({ status: '출고완료' })
+                .eq('id', id);
+
+            if (error) throw error;
+            message.success('출고 처리되었습니다.');
+            fetchOrders(); // 목록 새로고침
+        } catch (error) {
+            message.error('상태 변경 실패: ' + error.message);
+        }
+    };
+
     const showModal = () => {
         form.resetFields();
         setIsModalVisible(true);
@@ -123,10 +134,8 @@ const Dashboard = () => {
           key: 'created_at',
           render: (text) => text ? new Date(text).toLocaleString() : '-'
         },
-        // ★★★ [수정됨] DB 컬럼명 'customer' 사용
         { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
-        // ★★★ [수정됨] DB 컬럼명 'product' 사용
         { title: '상품명', dataIndex: 'product', key: 'product' }, 
         { 
           title: '상태', 
@@ -137,8 +146,27 @@ const Dashboard = () => {
               {status || '처리대기'}
             </Tag>
           )
-        }
-    ];
+        },
+        // ★★★ [추가됨] 관리자 전용 '관리' 컬럼 (출고 처리 버튼)
+        isAdmin ? {
+            title: '관리',
+            key: 'action',
+            render: (_, record) => (
+                record.status === '처리대기' && (
+                    <Popconfirm
+                        title="출고 처리하시겠습니까?"
+                        onConfirm={() => handleUpdateStatus(record.id)}
+                        okText="예"
+                        cancelText="아니오"
+                    >
+                        <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />}>
+                            출고 처리
+                        </Button>
+                    </Popconfirm>
+                )
+            )
+        } : {}
+    ].filter(col => col.title); // 빈 객체 제거용
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
@@ -174,9 +202,14 @@ const Dashboard = () => {
                             <h3>주문 목록</h3>
                             <div>
                                 <Button type="primary" onClick={showModal} icon={<PlusOutlined />} style={{ marginRight: 8 }}>신규 주문 등록</Button>
-                                {isAdmin && (
-                                    <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
-                                )}
+                                {/* ★★★ [수정됨] isAdmin 조건 제거: 누구나 엑셀 버튼 보임 */}
+                                <Button 
+                                    type="primary" 
+                                    onClick={() => setIsExcelModalVisible(true)} 
+                                    style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                                >
+                                    엑셀로 대량 등록
+                                </Button>
                             </div>
                         </div>
                         
@@ -187,14 +220,12 @@ const Dashboard = () => {
             
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical">
-                    {/* ★★★ [수정됨] 폼 이름도 'customer_input'으로 변경해서 혼동 방지 */}
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
                     <Form.Item name="barcode" label="바코드" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
-                    {/* ★★★ [수정됨] 폼 이름도 'product_input'으로 변경해서 혼동 방지 */}
                     <Form.Item name="product_input" label="상품명" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
@@ -204,7 +235,13 @@ const Dashboard = () => {
                 </Form>
             </Modal>
             
-            {isAdmin && <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />}
+            {/* ★★★ [수정됨] isAdmin 조건 제거: 누구나 엑셀 모달 뜸 */}
+            <ExcelUploadModal 
+                isOpen={isExcelModalVisible} 
+                onClose={() => setIsExcelModalVisible(false)} 
+                onUploadSuccess={fetchOrders} 
+                customerName={customerName} 
+            />
         </Layout>
     );
 };
