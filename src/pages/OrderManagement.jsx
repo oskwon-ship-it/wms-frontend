@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, Badge } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, DownOutlined, EditOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber } from 'antd';
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 
@@ -16,13 +16,12 @@ const OrderManagement = () => {
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
     
-    // ★★★ [추가] 송장번호 입력을 위한 상태
     const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false);
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
 
     const [form] = Form.useForm();
-    const [trackingForm] = Form.useForm(); // 송장번호 입력용 폼
+    const [trackingForm] = Form.useForm(); 
     const [customerName, setCustomerName] = useState(''); 
 
     const {
@@ -136,28 +135,23 @@ const OrderManagement = () => {
         }
     };
 
-    // ★★★ [수정됨] 출고 버튼 클릭 시 팝업 띄우기
     const openTrackingModal = (orderNumber, items) => {
         setSelectedOrderNumber(orderNumber);
-        // 주문번호가 없는 데이터들을 위해 ID 목록도 함께 저장
         setSelectedOrderIds(items.map(i => i.id));
-        trackingForm.resetFields(); // 폼 초기화
+        trackingForm.resetFields(); 
         setIsTrackingModalVisible(true);
     };
 
-    // ★★★ [추가됨] 송장번호 입력 후 실제 출고 처리
     const handleShipOrder = async (values) => {
         try {
             let query = supabase.from('orders').update({ 
                 status: '출고완료',
-                tracking_number: values.tracking_input // 입력받은 송장번호 저장
+                tracking_number: values.tracking_input 
             });
 
             if (selectedOrderNumber && selectedOrderNumber !== '-') {
-                // 주문번호가 있으면 해당 주문번호 전체 업데이트
                 query = query.eq('order_number', selectedOrderNumber);
             } else {
-                // 주문번호가 없으면 ID 목록으로 업데이트
                 query = query.in('id', selectedOrderIds);
             }
 
@@ -169,6 +163,30 @@ const OrderManagement = () => {
             fetchOrders();
         } catch (error) {
             message.error('처리 실패: ' + error.message);
+        }
+    };
+
+    const handleCancelShipment = async (orderNumber, items) => {
+        try {
+            let query = supabase.from('orders').update({ 
+                status: '처리대기',
+                tracking_number: null 
+            });
+
+            if (orderNumber && orderNumber !== '-') {
+                query = query.eq('order_number', orderNumber);
+            } else {
+                const ids = items.map(i => i.id);
+                query = query.in('id', ids);
+            }
+
+            const { error } = await query;
+            if (error) throw error;
+            
+            message.success('출고가 취소되었습니다. (처리대기 상태로 변경)');
+            fetchOrders();
+        } catch (error) {
+            message.error('취소 실패: ' + error.message);
         }
     };
 
@@ -187,6 +205,7 @@ const OrderManagement = () => {
         return <Table columns={itemColumns} dataSource={record.items} pagination={false} size="small" />;
     };
 
+    // ★★★ [핵심 수정] 관리 컬럼 및 버튼 권한 분리
     const parentColumns = [
         { title: '주문 시간', dataIndex: 'created_at', key: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
         { title: '주문번호', dataIndex: 'order_number', key: 'order_number', render: (text) => <b>{text}</b> }, 
@@ -197,33 +216,51 @@ const OrderManagement = () => {
           title: '통합 상태', dataIndex: 'status', key: 'status',
           render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag>
         },
-        isAdmin ? {
-            title: '관리', key: 'action',
-            render: (_, record) => (
-                // 처리대기 상태면 출고 버튼, 이미 출고완료면 수정 아이콘(선택사항) 표시 가능
-                record.status === '처리대기' ? (
-                    <Button 
-                        size="small" 
-                        type="primary" 
-                        ghost 
-                        icon={<EditOutlined />}
-                        onClick={() => openTrackingModal(record.order_number, record.items)}
-                    >
-                        출고 처리
-                    </Button>
-                ) : (
-                    // 이미 출고된 건도 송장번호 수정하고 싶으면 버튼 활성화 가능
-                    <Button 
-                        size="small" 
-                        type="default" 
-                        icon={<EditOutlined />}
-                        onClick={() => openTrackingModal(record.order_number, record.items)}
-                    >
-                        송장 수정
-                    </Button>
-                )
-            )
-        } : {}
+        {
+            title: '관리', key: 'action', width: 200, // ★ isAdmin 조건 제거 (항상 보임)
+            render: (_, record) => {
+                // 1. 상태가 '처리대기'일 때
+                if (record.status === '처리대기') {
+                    // ★ 관리자에게만 '출고 처리' 버튼 표시
+                    return isAdmin && (
+                        <Button 
+                            size="small" type="primary" ghost icon={<EditOutlined />}
+                            onClick={() => openTrackingModal(record.order_number, record.items)}
+                        >
+                            출고 처리
+                        </Button>
+                    );
+                }
+
+                // 2. 상태가 '출고완료'일 때
+                return (
+                    <div style={{ display: 'flex', gap: '5px' }}>
+                        {/* ★ 관리자에게만 '송장(수정)' 버튼 표시 */}
+                        {isAdmin && (
+                            <Button 
+                                size="small" type="default" icon={<EditOutlined />}
+                                onClick={() => openTrackingModal(record.order_number, record.items)}
+                            >
+                                송장
+                            </Button>
+                        )}
+                        
+                        {/* ★ [핵심] 누구나(고객사 포함) '출고 취소' 버튼 표시 */}
+                        <Popconfirm
+                            title="출고를 취소하시겠습니까?"
+                            description="상태가 '처리대기'로 변경되고 송장번호가 삭제됩니다."
+                            onConfirm={() => handleCancelShipment(record.order_number, record.items)}
+                            okText="예"
+                            cancelText="아니오"
+                        >
+                            <Button size="small" danger icon={<UndoOutlined />}>
+                                취소
+                            </Button>
+                        </Popconfirm>
+                    </div>
+                );
+            }
+        }
     ].filter(col => col.title);
 
     return (
@@ -271,7 +308,6 @@ const OrderManagement = () => {
                 </Content>
             </Layout>
             
-            {/* 신규 주문 등록 모달 */}
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
@@ -292,7 +328,6 @@ const OrderManagement = () => {
                 </Form>
             </Modal>
 
-            {/* ★★★ [추가됨] 송장번호 입력 및 출고 처리 모달 */}
             <Modal 
                 title="출고 처리 (송장번호 입력)" 
                 open={isTrackingModalVisible} 
