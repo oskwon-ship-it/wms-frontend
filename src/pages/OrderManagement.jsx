@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined } from '@ant-design/icons'; // ShopOutlined 추가
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined } from '@ant-design/icons'; // ★ ShopOutlined 추가
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 import TrackingUploadModal from '../components/TrackingUploadModal';
@@ -38,11 +38,11 @@ const OrderManagement = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ★★★ 메뉴 이동 함수 업데이트
+    // ★★★ 메뉴 이동 함수 (재고 관리 추가됨)
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
-        if (e.key === '3') navigate('/inventory'); // 재고 관리 이동
+        if (e.key === '3') navigate('/inventory'); // ★ 여기!
     };
 
     const checkUser = async () => {
@@ -322,7 +322,7 @@ const OrderManagement = () => {
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        {/* ★★★ 재고 관리 메뉴 추가 */}
+                        {/* ★★★ 재고 관리 메뉴 버튼 추가됨 */}
                         <Menu.Item key="3" icon={<ShopOutlined />}>재고 관리</Menu.Item>
                         <Menu.Item key="4" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
@@ -332,26 +332,13 @@ const OrderManagement = () => {
                         
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false}>
                             <Space wrap>
-                                <RangePicker 
-                                    onChange={(dates) => setDateRange(dates)} 
-                                    value={dateRange}
-                                    placeholder={['시작일', '종료일']}
-                                />
-                                
-                                <Input 
-                                    placeholder="주문번호, 송장번호, 고객사 검색" 
-                                    prefix={<SearchOutlined />} 
-                                    value={searchText}
-                                    onChange={(e) => setSearchText(e.target.value)}
-                                    style={{ width: 250 }}
-                                />
-
+                                <RangePicker onChange={(dates) => setDateRange(dates)} value={dateRange} placeholder={['시작일', '종료일']} />
+                                <Input placeholder="주문번호, 송장번호, 고객사 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
                                 <Radio.Group value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} buttonStyle="solid">
                                     <Radio.Button value="all">전체</Radio.Button>
                                     <Radio.Button value="처리대기">처리대기</Radio.Button>
                                     <Radio.Button value="출고완료">출고완료</Radio.Button>
                                 </Radio.Group>
-
                                 <Button icon={<ReloadOutlined />} onClick={resetFilters}>초기화</Button>
                             </Space>
                         </Card>
@@ -359,29 +346,13 @@ const OrderManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>전체 주문 관리 ({filteredOrders.length}건)</h3>
                             <div>
-                                {isAdmin && (
-                                    <Button 
-                                        type="default" 
-                                        onClick={() => setIsBulkTrackingVisible(true)} 
-                                        style={{ marginRight: 8, borderColor: '#1890ff', color: '#1890ff' }}
-                                        icon={<FileExcelOutlined />}
-                                    >
-                                        송장 일괄 등록
-                                    </Button>
-                                )}
+                                {isAdmin && <Button type="default" onClick={() => setIsBulkTrackingVisible(true)} style={{ marginRight: 8, borderColor: '#1890ff', color: '#1890ff' }} icon={<FileExcelOutlined />}>송장 일괄 등록</Button>}
                                 <Button type="primary" onClick={() => setIsModalVisible(true)} icon={<PlusOutlined />} style={{ marginRight: 8 }}>신규 주문 등록</Button>
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
                         </div>
                         
-                        <Table 
-                            columns={parentColumns} 
-                            dataSource={filteredOrders} 
-                            rowKey="key" 
-                            pagination={{ pageSize: 10 }} 
-                            loading={loading}
-                            expandable={{ expandedRowRender }}
-                        />
+                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} />
                     </div>
                 </Content>
             </Layout>
@@ -420,14 +391,7 @@ const OrderManagement = () => {
             </Modal>
 
             <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
-            
-            {isAdmin && (
-                <TrackingUploadModal 
-                    isOpen={isBulkTrackingVisible} 
-                    onClose={() => setIsBulkTrackingVisible(false)} 
-                    onUploadSuccess={fetchOrders} 
-                />
-            )}
+            {isAdmin && <TrackingUploadModal isOpen={isBulkTrackingVisible} onClose={() => setIsBulkTrackingVisible(false)} onUploadSuccess={fetchOrders} />}
         </Layout>
     );
 };

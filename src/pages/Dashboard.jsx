@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Row, Col, Card, Statistic, Tag } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined } from '@ant-design/icons'; // ShopOutlined 추가
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined } from '@ant-design/icons'; // ★ ShopOutlined 아이콘 추가
 import { useNavigate } from 'react-router-dom';
 
 const { Header, Content, Sider } = Layout;
@@ -18,11 +18,11 @@ const Dashboard = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ★★★ 메뉴 이동 함수 업데이트
+    // ★★★ 메뉴 이동 함수 (재고 관리 추가됨)
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
-        if (e.key === '3') navigate('/inventory'); // 재고 관리 이동
+        if (e.key === '3') navigate('/inventory'); // ★ 여기!
     };
 
     const checkUser = async () => {
@@ -109,7 +109,7 @@ const Dashboard = () => {
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        {/* ★★★ 재고 관리 메뉴 추가 */}
+                        {/* ★★★ 재고 관리 메뉴 버튼 추가됨 */}
                         <Menu.Item key="3" icon={<ShopOutlined />}>재고 관리</Menu.Item>
                         <Menu.Item key="4" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
@@ -117,34 +117,9 @@ const Dashboard = () => {
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         <Row gutter={16} style={{ marginBottom: 20 }}>
-                            <Col span={8}>
-                                <Card>
-                                    <Statistic 
-                                        title="총 주문 건수" 
-                                        value={countUniqueOrders(orders)} 
-                                        prefix={<DropboxOutlined />} 
-                                    />
-                                </Card>
-                            </Col>
-                            <Col span={8}>
-                                <Card>
-                                    <Statistic 
-                                        title="처리 대기중" 
-                                        value={countUniqueOrders(orders.filter(o => o.status === '처리대기'))} 
-                                        valueStyle={{ color: '#cf1322' }} 
-                                    />
-                                </Card>
-                            </Col>
-                            <Col span={8}>
-                                <Card>
-                                    <Statistic 
-                                        title="출고 완료" 
-                                        value={countUniqueOrders(orders.filter(o => o.status === '출고완료'))} 
-                                        valueStyle={{ color: '#3f8600' }} 
-                                        prefix={<CarOutlined />} 
-                                    />
-                                </Card>
-                            </Col>
+                            <Col span={8}><Card><Statistic title="총 주문 건수" value={countUniqueOrders(orders)} prefix={<DropboxOutlined />} /></Card></Col>
+                            <Col span={8}><Card><Statistic title="처리 대기중" value={countUniqueOrders(orders.filter(o => o.status === '처리대기'))} valueStyle={{ color: '#cf1322' }} /></Card></Col>
+                            <Col span={8}><Card><Statistic title="출고 완료" value={countUniqueOrders(orders.filter(o => o.status === '출고완료'))} valueStyle={{ color: '#3f8600' }} prefix={<CarOutlined />} /></Card></Col>
                         </Row>
 
                         <h3>최근 들어온 주문 (상위 5건)</h3>
