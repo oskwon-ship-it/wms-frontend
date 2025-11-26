@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select } from 'antd';
+// ★★★ [수정됨] DownloadOutlined 아이콘 추가 완료!
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined, DownloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
+import * as XLSX from 'xlsx'; // 엑셀 다운로드를 위해 필요
 
 const { Header, Content, Sider } = Layout;
+const { Option } = Select;
 
 const InventoryManagement = () => {
     const navigate = useNavigate();
@@ -35,9 +38,7 @@ const InventoryManagement = () => {
     const [form] = Form.useForm();
     const [addForm] = Form.useForm(); 
 
-    const {
-        token: { colorBgContainer, borderRadiusLG },
-    } = theme.useToken();
+    const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
@@ -49,25 +50,12 @@ const InventoryManagement = () => {
     const checkUser = async () => {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            navigate('/login');
-            return;
-        }
-
+        if (!user) { navigate('/login'); return; }
         setUserEmail(user.email);
         const isAdministrator = user.email === 'kos@cbg.com';
         setIsAdmin(isAdministrator);
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('customer_name')
-            .eq('id', user.id)
-            .single();
-
-        if (profile) {
-            setCustomerName(profile.customer_name);
-        }
+        const { data: profile } = await supabase.from('profiles').select('customer_name').eq('id', user.id).single();
+        if (profile) setCustomerName(profile.customer_name);
         fetchInventory();
     };
 
@@ -115,15 +103,14 @@ const InventoryManagement = () => {
         setShowOnlyUrgent(false);
     };
 
-    useEffect(() => {
-        checkUser();
-    }, [customerName, isAdmin]); 
+    useEffect(() => { checkUser(); }, [customerName, isAdmin]); 
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate('/login');
     };
 
+    // ★ [추가] 엑셀 다운로드 기능
     const handleDownloadExcel = () => {
         const excelData = filteredInventory.map(item => ({
             '고객사': item.customer_name,
@@ -172,9 +159,11 @@ const InventoryManagement = () => {
                 expiration_date: values.expiration_date ? values.expiration_date.format('YYYY-MM-DD') : null,
                 updated_at: new Date()
             };
+            // 1. 재고 등록
             const { data, error } = await supabase.from('inventory').insert([newItem]).select();
             if (error) throw error;
 
+            // 2. 로그 기록
             if (data && data[0]) {
                 await supabase.from('inventory_logs').insert([{
                     inventory_id: data[0].id,
@@ -261,7 +250,6 @@ const InventoryManagement = () => {
         }
     };
 
-    // ★★★ [이 줄이 빠져서 에러가 났습니다! 다시 추가했습니다.]
     const urgentCount = inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= alertDays).length;
 
     const columns = [
@@ -326,7 +314,6 @@ const InventoryManagement = () => {
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
                             <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
@@ -349,6 +336,9 @@ const InventoryManagement = () => {
                                             <InputNumber min={1} max={365} value={alertDays} onChange={(val) => setAlertDays(val)} style={{ width: 70 }} /><span> 일</span>
                                         </div>
                                         <Checkbox checked={showOnlyUrgent} onChange={(e) => setShowOnlyUrgent(e.target.checked)} style={{color: 'red', fontWeight: 'bold'}}>임박 상품만 보기</Checkbox>
+                                        
+                                        {/* ★ 엑셀 다운로드 버튼 위치 (여기 추가됨) */}
+                                        <Button icon={<DownloadOutlined />} onClick={handleDownloadExcel}>목록 다운로드</Button>
                                     </Space>
                                 </Col>
                             </Row>
@@ -357,7 +347,6 @@ const InventoryManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
                             <div>
-                                <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginRight: 8 }}>목록 다운로드</Button>
                                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
                                 <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
                             </div>
@@ -368,7 +357,6 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
-            {/* ... 모달들 (생략 없이 그대로 유지) ... */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
