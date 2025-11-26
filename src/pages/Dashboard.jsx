@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Row, Col, Card, Statistic, Tag } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, UnorderedListOutlined, SettingOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined } from '@ant-design/icons'; // ShopOutlined 추가
 import { useNavigate } from 'react-router-dom';
 
 const { Header, Content, Sider } = Layout;
@@ -18,10 +18,11 @@ const Dashboard = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
+    // ★★★ 메뉴 이동 함수 업데이트
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
-        // if (e.key === '3') navigate('/settings');
+        if (e.key === '3') navigate('/inventory'); // 재고 관리 이동
     };
 
     const checkUser = async () => {
@@ -70,20 +71,18 @@ const Dashboard = () => {
         navigate('/login');
     };
 
-    // ★★★ [추가됨] 주문 건수 계산 함수 (주문번호 기준)
     const countUniqueOrders = (items) => {
         const uniqueKeys = new Set();
         items.forEach(item => {
-            // 주문번호가 있으면 주문번호를 키로, 없으면 ID를 키로 사용 (중복 제거)
             const key = item.order_number || `no-order-${item.id}`;
             uniqueKeys.add(key);
         });
-        return uniqueKeys.size; // 중복 제거된 개수 반환
+        return uniqueKeys.size;
     };
 
     const columns = [
         { title: '주문 시간', dataIndex: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
-        { title: '주문번호', dataIndex: 'order_number', render: (text) => <b>{text || '-'}</b> }, // 주문번호 표시 추가
+        { title: '주문번호', dataIndex: 'order_number', render: (text) => <b>{text || '-'}</b> },
         { title: '고객사', dataIndex: 'customer' },
         { title: '바코드', dataIndex: 'barcode' },
         { title: '상품명', dataIndex: 'product' },
@@ -110,12 +109,13 @@ const Dashboard = () => {
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        <Menu.Item key="3" icon={<SettingOutlined />}>설정</Menu.Item>
+                        {/* ★★★ 재고 관리 메뉴 추가 */}
+                        <Menu.Item key="3" icon={<ShopOutlined />}>재고 관리</Menu.Item>
+                        <Menu.Item key="4" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        {/* 통계 카드 영역 (수정됨) */}
                         <Row gutter={16} style={{ marginBottom: 20 }}>
                             <Col span={8}>
                                 <Card>

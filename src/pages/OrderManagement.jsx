@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined } from '@ant-design/icons'; // ShopOutlined 추가
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
-import TrackingUploadModal from '../components/TrackingUploadModal'; // ★ [추가] 새로 만든 파일 임포트
+import TrackingUploadModal from '../components/TrackingUploadModal';
 import dayjs from 'dayjs';
 
 const { Header, Content, Sider } = Layout;
@@ -18,11 +18,10 @@ const OrderManagement = () => {
     const [filteredOrders, setFilteredOrders] = useState([]); 
     const [loading, setLoading] = useState(true);
     
-    // 모달 상태들
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
-    const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false); // 개별 송장 입력용
-    const [isBulkTrackingVisible, setIsBulkTrackingVisible] = useState(false); // ★ [추가] 송장 일괄 등록용
+    const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false); 
+    const [isBulkTrackingVisible, setIsBulkTrackingVisible] = useState(false); 
     
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -39,9 +38,11 @@ const OrderManagement = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
+    // ★★★ 메뉴 이동 함수 업데이트
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
+        if (e.key === '3') navigate('/inventory'); // 재고 관리 이동
     };
 
     const checkUser = async () => {
@@ -321,7 +322,9 @@ const OrderManagement = () => {
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        <Menu.Item key="3" icon={<SettingOutlined />}>설정</Menu.Item>
+                        {/* ★★★ 재고 관리 메뉴 추가 */}
+                        <Menu.Item key="3" icon={<ShopOutlined />}>재고 관리</Menu.Item>
+                        <Menu.Item key="4" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
@@ -356,7 +359,6 @@ const OrderManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>전체 주문 관리 ({filteredOrders.length}건)</h3>
                             <div>
-                                {/* ★★★ [추가] 관리자 전용 '송장 일괄 등록' 버튼 */}
                                 {isAdmin && (
                                     <Button 
                                         type="default" 
@@ -419,7 +421,6 @@ const OrderManagement = () => {
 
             <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
             
-            {/* ★★★ [추가] 송장 일괄 등록 모달 연결 */}
             {isAdmin && (
                 <TrackingUploadModal 
                     isOpen={isBulkTrackingVisible} 
