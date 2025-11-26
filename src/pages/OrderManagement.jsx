@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined } from '@ant-design/icons'; // ★ ShopOutlined 추가
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 import TrackingUploadModal from '../components/TrackingUploadModal';
@@ -38,11 +38,12 @@ const OrderManagement = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ★★★ 메뉴 이동 함수 (재고 관리 추가됨)
+    // ★ 메뉴 이동 함수
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
-        if (e.key === '3') navigate('/inventory'); // ★ 여기!
+        if (e.key === '3') navigate('/inventory');
+        if (e.key === '4') navigate('/history');
     };
 
     const checkUser = async () => {
@@ -322,9 +323,14 @@ const OrderManagement = () => {
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        {/* ★★★ 재고 관리 메뉴 버튼 추가됨 */}
-                        <Menu.Item key="3" icon={<ShopOutlined />}>재고 관리</Menu.Item>
-                        <Menu.Item key="4" icon={<SettingOutlined />}>설정</Menu.Item>
+                        
+                        {/* ★ 서브 메뉴 적용 */}
+                        <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
+                            <Menu.Item key="3">실시간 재고</Menu.Item>
+                            <Menu.Item key="4">재고 수불부</Menu.Item>
+                        </Menu.SubMenu>
+
+                        <Menu.Item key="5" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
