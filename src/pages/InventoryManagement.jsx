@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined } from '@ant-design/icons';
+// ★ ClockCircleOutlined 아이콘 추가됨
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
@@ -149,14 +150,10 @@ const InventoryManagement = () => {
         }
     };
 
-    // ★★★ [수정됨] 컬럼 순서 변경 (바코드 <-> 상품명)
     const columns = [
         { title: '고객사', dataIndex: 'customer_name', key: 'customer_name' },
-        // 1. 바코드가 먼저 나오게 이동
         { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
-        // 2. 상품명이 그 뒤로 이동
         { title: '상품명', dataIndex: 'product_name', key: 'product_name' },
-        
         { 
             title: '유통기한', 
             dataIndex: 'expiration_date', 
@@ -237,6 +234,18 @@ const InventoryManagement = () => {
                                     />
                                 </Card>
                             </Col>
+                            {/* ★★★ [추가됨] 유통기한 임박 카드 (3번째 칸) */}
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic 
+                                        title="유통기한 임박 (30일)" 
+                                        // 날짜가 있으면서, 오늘 날짜와의 차이가 30일 이하인 것만 카운트
+                                        value={inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= 30).length} 
+                                        valueStyle={{ color: '#faad14' }} // 주황색 경고
+                                        prefix={<ClockCircleOutlined />} 
+                                    />
+                                </Card>
+                            </Col>
                         </Row>
 
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
@@ -272,15 +281,16 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
+            {/* 신규 등록 모달 */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
                         <Input />
                     </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
                         <Input />
                     </Form.Item>
                     <Form.Item name="expiration_date" label="유통기한">
@@ -293,6 +303,7 @@ const InventoryManagement = () => {
                 </Form>
             </Modal>
 
+            {/* 수정 모달 */}
             <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
