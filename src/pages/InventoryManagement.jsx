@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select } from 'antd';
-// ★★★ [수정됨] DownloadOutlined 아이콘 추가 완료!
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined, DownloadOutlined } from '@ant-design/icons';
+// ★★★ [수정됨] ImportOutlined 아이콘 추가 완료!
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined, DownloadOutlined, ImportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
-import * as XLSX from 'xlsx'; // 엑셀 다운로드를 위해 필요
+import * as XLSX from 'xlsx';
 
 const { Header, Content, Sider } = Layout;
 const { Option } = Select;
@@ -111,7 +111,6 @@ const InventoryManagement = () => {
         navigate('/login');
     };
 
-    // ★ [추가] 엑셀 다운로드 기능
     const handleDownloadExcel = () => {
         const excelData = filteredInventory.map(item => ({
             '고객사': item.customer_name,
@@ -272,10 +271,20 @@ const InventoryManagement = () => {
             }
         },
         { title: '로케이션', dataIndex: 'location', sorter: (a, b) => (a.location || '').localeCompare(b.location || ''), render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span> },
-        { title: '현재고', dataIndex: 'quantity', sorter: (a, b) => a.quantity - b.quantity, render: (qty, record) => <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>{qty} 개{qty <= record.safe_quantity && <Tag color="orange" style={{marginLeft: 8}}>부족</Tag>}</span> },
-        { title: '안전재고', dataIndex: 'safe_quantity', sorter: (a, b) => a.safe_quantity - b.safe_quantity },
+        
+        { 
+            title: '현재고', dataIndex: 'quantity', sorter: (a, b) => a.quantity - b.quantity, align: 'center', render: (qty) => <b>{qty}</b>
+        },
+        { 
+            title: '주문대기', dataIndex: 'allocated_quantity', align: 'center', render: (qty) => <span style={{color: qty > 0 ? 'orange' : '#ccc'}}>{qty > 0 ? `-${qty}` : 0}</span>
+        },
+        { 
+            title: '가용재고', dataIndex: 'available_quantity', align: 'center', sorter: (a, b) => a.available_quantity - b.available_quantity, 
+            render: (qty, record) => <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'blue' }}>{qty}{qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8, fontSize: '10px'}}>부족</Tag>}</span>
+        },
+        { title: '안전재고', dataIndex: 'safe_quantity', align: 'center', sorter: (a, b) => a.safe_quantity - b.safe_quantity },
         {
-            title: '관리', key: 'action', width: 180,
+            title: '관리', key: 'action', width: 150,
             render: (_, record) => (
                 <Space>
                     <Button size="small" icon={<HistoryOutlined />} onClick={() => handleShowHistory(record)}>이력</Button>
@@ -319,7 +328,7 @@ const InventoryManagement = () => {
                         
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
+                            <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.available_quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
                             <Col span={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
 
@@ -383,7 +392,7 @@ const InventoryManagement = () => {
                     <Form.Item name="reason" label="변경 사유" rules={[{ required: true, message: '사유를 선택해주세요' }]}>
                         <Select>
                             <Option value="재고 조정">재고 조정 (기본)</Option>
-                            <Option value="유통기한 변경">유통기한 변경</Option> {/* ★ 추가 */}
+                            <Option value="유통기한 변경">유통기한 변경</Option> 
                             <Option value="로케이션 이동">로케이션 이동</Option>
                             <Option value="실사조정">실사 재고 조정</Option>
                             <Option value="파손/분실">파손/분실</Option>
@@ -409,6 +418,8 @@ const InventoryManagement = () => {
                                 let color = 'default';
                                 if(t?.includes('입고')) color = 'green';
                                 else if(t?.includes('출고')) color = 'volcano';
+                                else if(t?.includes('이동')) color = 'blue';
+                                else if(t?.includes('조정')) color = 'orange';
                                 else if(t?.includes('유통기한')) color = 'cyan'; // ★ 유통기한 변경 색상
                                 return <Tag color={color}>{t}</Tag>;
                             }
