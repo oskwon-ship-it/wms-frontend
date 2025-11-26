@@ -159,19 +159,18 @@ const OrderManagement = () => {
         navigate('/login');
     };
 
-    // ★★★ [수정됨] 바코드 검색 함수 개선
+    // ★★★ [수정] 바코드 검색 함수 개선 (이슈 해결)
     const handleBarcodeSearch = async (barcode) => {
         if (!barcode) { 
             message.warning('바코드를 입력해주세요.'); 
             return; 
         }
 
-        // 공백 제거
+        // 1. 공백 제거
         const cleanBarcode = barcode.trim();
         
-        // 고객사 이름 확인 (관리자면 입력값, 고객사면 로그인 정보)
-        // ★ 여기서 customerName 상태가 늦게 업데이트될 수 있으므로 form 값 우선 확인
-        const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : (customerName || form.getFieldValue('customer_input'));
+        // 2. 고객사 이름 확정 (관리자는 form 값, 고객은 state 값)
+        const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : customerName;
 
         if (!currentCustomer) {
             message.error('고객사 정보가 확인되지 않습니다. (잠시 후 다시 시도해주세요)');
@@ -179,50 +178,31 @@ const OrderManagement = () => {
         }
 
         try {
-            // 재고 테이블에서 검색
-            const { data, error } = await supabase
+            // 3. 재고 테이블에서 검색 (정확한 customer_name과 barcode로)
+            const { data: item } = await supabase
                 .from('inventory')
-                .select('product_name, quantity, customer_name')
+                .select('product_name, quantity')
                 .eq('barcode', cleanBarcode)
-                // .eq('customer_name', currentCustomer) // ★ 일단 바코드로만 찾고 아래에서 필터링 (더 정확함)
-                .maybeSingle(); // single() 대신 maybeSingle() 사용 (에러 방지)
+                .eq('customer_name', currentCustomer)
+                .maybeSingle(); 
 
-            // 1. 바코드 자체가 없는 경우
-            if (!data) {
-                // 혹시 여러 개가 나올 수 있으니 전체 검색
-                 const { data: multipleData } = await supabase
-                    .from('inventory')
-                    .select('product_name, quantity, customer_name')
-                    .eq('barcode', cleanBarcode);
-                
-                 // 내 고객사 물건이 있는지 찾기
-                 const myItem = multipleData?.find(d => d.customer_name === currentCustomer);
-
-                 if (myItem) {
-                    form.setFieldsValue({ product: myItem.product_name });
-                    message.success(`상품 확인: ${myItem.product_name}`);
-                 } else {
-                    message.error('해당 바코드의 상품을 찾을 수 없습니다.');
-                    form.setFieldsValue({ product: '' });
-                 }
-                 return;
-            }
-
-            // 2. 찾았는데 내 물건이 아닌 경우
-            if (data.customer_name !== currentCustomer) {
-                message.warning(`해당 바코드는 다른 고객사(${data.customer_name})의 상품입니다.`);
+            if (!item) {
+                // 못 찾았거나, 다른 고객사 상품이거나.
+                message.error('해당 바코드의 상품을 찾을 수 없습니다.');
+                form.setFieldsValue({ product: '' });
                 return;
             }
 
-            // 3. 정상 찾음
-            form.setFieldsValue({ product: data.product_name });
-            message.success(`상품 확인: ${data.product_name} (현재고: ${data.quantity}개)`);
+            // 4. 정상 찾음 -> 자동 입력
+            form.setFieldsValue({ product: item.product_name });
+            message.success(`상품 확인: ${item.product_name} (현재고: ${item.quantity}개)`);
 
         } catch (err) {
             console.error(err);
             message.error('검색 중 오류가 발생했습니다.');
         }
     };
+
 
     const handleNewOrder = async (values) => {
         try {
@@ -264,8 +244,8 @@ const OrderManagement = () => {
             const { data: stocks } = await supabase
                 .from('inventory')
                 .select('*')
-                .eq('barcode', orderItem.barcode)
-                .eq('customer_name', orderItem.customer)
+                .eq('barcode', (orderItem.barcode || '').trim())
+                .eq('customer_name', (orderItem.customer || '').trim())
                 .gt('quantity', 0)
                 .order('expiration_date', { ascending: true, nullsLast: true });
 
@@ -273,6 +253,7 @@ const OrderManagement = () => {
 
             for (const stock of stocks) {
                 if (remainingQty <= 0) break;
+
                 const deductAmount = Math.min(stock.quantity, remainingQty);
                 const newStockQty = stock.quantity - deductAmount;
 
@@ -301,8 +282,8 @@ const OrderManagement = () => {
             const { data: stocks } = await supabase
                 .from('inventory')
                 .select('*')
-                .eq('barcode', orderItem.barcode)
-                .eq('customer_name', orderItem.customer)
+                .eq('barcode', (orderItem.barcode || '').trim())
+                .eq('customer_name', (orderItem.customer || '').trim())
                 .order('expiration_date', { ascending: false })
                 .limit(1);
 
@@ -411,8 +392,8 @@ const OrderManagement = () => {
                 </div>
             </Header>
             <Layout>
-                <Sider theme="light" width={200}>
-                    <Menu mode="inline" defaultSelectedKeys={['2']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
+                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
+                    <Menu mode="inline" defaultSelectedKeys={['2']} defaultOpenKeys={['sub1']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
@@ -446,12 +427,12 @@ const OrderManagement = () => {
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
                         </div>
-                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} />
+                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
             </Layout>
             
-            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
+            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
@@ -460,7 +441,7 @@ const OrderManagement = () => {
                         <Input placeholder="예: ORDER-001" /> 
                     </Form.Item>
                     
-                    {/* ★ 바코드 검색 (Search) + 엔터 시 검색 실행 */}
+                    {/* ★ 바코드 검색 (문제의 필드) */}
                     <Form.Item name="barcode" label="바코드 (스캔 또는 입력 후 엔터)" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
                         <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
                     </Form.Item>
@@ -476,12 +457,16 @@ const OrderManagement = () => {
                 </Form>
             </Modal>
 
-            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null}>
+            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <p>주문번호: <b>{selectedOrderNumber}</b></p>
                 <p style={{marginBottom: 20, color: 'gray'}}>송장번호를 입력하면 해당 주문의 모든 상품이 '출고완료' 처리됩니다.</p>
                 <Form form={trackingForm} onFinish={handleShipOrder} layout="vertical">
-                    <Form.Item name="tracking_input" label="운송장 번호" rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}><Input placeholder="예: 635423123123" size="large" autoFocus /></Form.Item>
-                    <Form.Item><Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 처리</Button></Form.Item>
+                    <Form.Item name="tracking_input" label="운송장 번호" rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}>
+                        <Input placeholder="예: 635423123123" size="large" autoFocus />
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 처리</Button>
+                    </Form.Item>
                 </Form>
             </Modal>
 
