@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, Select, message } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, Select, message, Row, Col, Card, Statistic, Tag } from 'antd'; // ★ Card, Row, Col, Statistic, Tag 등 컴포넌트 추가
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined } from '@ant-design/icons'; // ★ 아이콘 추가
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 
@@ -20,14 +20,13 @@ const Dashboard = () => {
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
     const [form] = Form.useForm();
     
-    // ★★★ 1. 고객사 이름 상태 추가
     const [customerName, setCustomerName] = useState(''); 
 
     const {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ★★★ 2. checkUser 함수 수정: profiles에서 customer_name 가져오기
+    // 1. checkUser 함수: profiles에서 customer_name 가져오기
     const checkUser = async () => {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
@@ -39,12 +38,10 @@ const Dashboard = () => {
 
         setUserEmail(user.email);
         
-        // 관리자 확인 (kos@cbg.com 이면 관리자)
         const isAdministrator = user.email === 'kos@cbg.com';
         setIsAdmin(isAdministrator);
 
-        // 3. profiles 테이블에서 고객사 이름 가져오기
-        const { data: profile, error } = await supabase
+        const { data: profile } = await supabase
             .from('profiles')
             .select('customer_name')
             .eq('id', user.id)
@@ -53,7 +50,6 @@ const Dashboard = () => {
         if (profile) {
             setCustomerName(profile.customer_name);
         } else if (!isAdministrator) {
-            // 관리자가 아닌데 프로필 정보가 없으면 에러 메시지
             message.error('프로필 정보(고객사 이름)가 설정되지 않았습니다. 관리자에게 문의하세요.');
         }
 
@@ -67,8 +63,9 @@ const Dashboard = () => {
             .order('created_at', { ascending: false });
 
         // 관리자가 아니면 본인 고객사 주문만 보도록 필터링
-        if (!isAdmin && customerName) {
-            query = query.eq('customer_name', customerName);
+        const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown'); // 'Unknown'은 예시, 실제로는 profile 정보가 없으면 안뜨게 해야함
+        if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
+             query = query.eq('customer_name', nameToFilter);
         }
 
         const { data, error } = await query;
@@ -105,7 +102,7 @@ const Dashboard = () => {
                 created_at: new Date(),
                 status: '처리대기',
                 tracking_number: null, 
-                customer_name: isAdmin ? values.customer_name : customerName, // ★★★ 관리자가 아니면 상태값 사용
+                customer_name: isAdmin ? values.customer_name : customerName, // 관리자 여부에 따라 고객사 이름 설정
             };
 
             const { error } = await supabase.from('orders').insert([orderData]);
@@ -114,7 +111,7 @@ const Dashboard = () => {
             message.success('주문 등록 완료!');
             form.resetFields();
             setIsModalVisible(false);
-            fetchOrders(); // 목록 갱신
+            fetchOrders(); 
         } catch (error) {
             console.error('주문 등록 오류:', error);
             message.error('주문 등록 실패: ' + (error.message || '알 수 없는 오류'));
@@ -128,10 +125,31 @@ const Dashboard = () => {
         setIsModalVisible(true);
     };
 
-    // ... (주문 목록 Columns 정의 생략 - 변경 없음) ...
+    const columns = [
+        {
+          title: '주문 시간',
+          dataIndex: 'created_at',
+          key: 'created_at',
+          render: (text) => text ? new Date(text).toLocaleString() : '-'
+        },
+        { title: '고객사', dataIndex: 'customer_name', key: 'customer_name' },
+        { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
+        { title: '상품명', dataIndex: 'product_name', key: 'product_name' },
+        { 
+          title: '상태', 
+          dataIndex: 'status', 
+          key: 'status',
+          render: (status) => (
+            <Tag color={status === '출고완료' ? 'green' : 'blue'}>
+              {status || '처리대기'}
+            </Tag>
+          )
+        }
+    ];
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
+            {/* Header (로그인/로그아웃 버튼, 고객사 이름 표시) */}
             <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
                 <div style={{ color: '#000', fontWeight: 'bold' }}>3PL WMS 대시보드</div>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -142,90 +160,128 @@ const Dashboard = () => {
                     </Button>
                 </div>
             </Header>
-            <Content style={{ margin: '0 16px' }}>
-                <div
-                    style={{
-                        padding: 24,
-                        minHeight: 360,
-                        background: colorBgContainer,
-                        borderRadius: borderRadiusLG,
-                        marginTop: 20
-                    }}
-                >
-                    <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                        <div>
-                            <Button 
-                                type="primary" 
-                                icon={<PlusOutlined />} 
-                                onClick={showModal} 
-                                style={{ marginRight: 8 }}
-                            >
-                                신규 주문 등록
-                            </Button>
-                            {isAdmin && (
+
+            <Layout>
+                {/* Sider (사이드바 - 메뉴) */}
+                <Layout.Sider theme="light" width={180}>
+                    <Menu mode="inline" defaultSelectedKeys={['1']} style={{ height: '100%', borderRight: 0 }}>
+                        <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
+                        <Menu.Item key="2">주문 관리</Menu.Item>
+                        <Menu.Item key="3">설정</Menu.Item>
+                    </Menu>
+                </Layout.Sider>
+
+                {/* Content (실제 내용) */}
+                <Content style={{ margin: '16px' }}>
+                    <div
+                        style={{
+                            padding: 24,
+                            minHeight: '100%',
+                            background: colorBgContainer,
+                            borderRadius: borderRadiusLG,
+                        }}
+                    >
+                        {/* ★★★ 1. 통계 카드 복구 ★★★ */}
+                        <Row gutter={16} style={{ marginBottom: 20 }}>
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic title="총 주문 건수" value={orders.length} prefix={<DropboxOutlined />} loading={loading} />
+                                </Card>
+                            </Col>
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic title="처리 대기중" value={0} valueStyle={{ color: '#cf1322' }} loading={loading} />
+                                </Card>
+                            </Col>
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic title="출고 완료" value={orders.length} valueStyle={{ color: '#3f8600' }} prefix={<CarOutlined />} loading={loading} />
+                                </Card>
+                            </Col>
+                        </Row>
+
+                        {/* ★★★ 2. 버튼 및 테이블 복구 ★★★ */}
+                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                            <h3>주문 목록</h3>
+                            <div>
                                 <Button 
                                     type="primary" 
-                                    onClick={() => setIsExcelModalVisible(true)}
-                                    style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                                    onClick={showModal} 
+                                    icon={<PlusOutlined />} 
+                                    style={{ marginRight: 8 }}
                                 >
-                                    엑셀로 대량 등록
+                                    신규 주문 등록
                                 </Button>
-                            )}
+                                {isAdmin && (
+                                    <Button 
+                                        type="primary" 
+                                        onClick={() => setIsExcelModalVisible(true)}
+                                        style={{ background: '#52c41a', borderColor: '#52c41a' }}
+                                    >
+                                        엑셀로 대량 등록
+                                    </Button>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                    {/* ... (Table 컴포넌트 생략) ... */}
-                </div>
-                
-                {/* 신규 주문 등록 모달 */}
-                <Modal
-                    title="신규 주문 등록"
-                    open={isModalVisible}
-                    onCancel={() => setIsModalVisible(false)}
-                    footer={null}
-                >
-                    <Form
-                        form={form}
-                        onFinish={handleNewOrder}
-                        layout="vertical"
-                    >
-                        {/* ★★★ 4. 고객사 필드 수정 */}
-                        <Form.Item 
-                            name="customer_name" 
-                            label="고객사" 
-                            rules={[{ required: true, message: '고객사를 입력해주세요!' }]}
-                            initialValue={!isAdmin ? customerName : ''} // 관리자가 아니면 자동 채우기
-                        >
-                            <Input disabled={!isAdmin} /> {/* 관리자가 아니면 수정 불가 */}
-                        </Form.Item>
-
-                        <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요!' }]}>
-                            <Input />
-                        </Form.Item>
-
-                        <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요!' }]}>
-                            <Input />
-                        </Form.Item>
-
-                        {/* ... (나머지 폼 아이템 생략) ... */}
                         
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>
-                                등록
-                            </Button>
-                        </Form.Item>
-                    </Form>
-                </Modal>
-                
-                {/* 엑셀 업로드 모달 */}
-                {isAdmin && (
-                    <ExcelUploadModal 
-                        isOpen={isExcelModalVisible} 
-                        onClose={() => setIsExcelModalVisible(false)} 
-                        onUploadSuccess={fetchOrders}
-                        customerName={customerName} // ★★★ customerName prop 추가
-                    />
-                )}
-            </Content>
+                        <Table 
+                            columns={columns} 
+                            dataSource={orders} 
+                            rowKey="id" 
+                            pagination={{ pageSize: 10 }} 
+                            loading={loading}
+                        />
+
+                    </div>
+                </Content>
+            </Layout>
+            
+            {/* 신규 주문 등록 모달 */}
+            <Modal
+                title="신규 주문 등록"
+                open={isModalVisible}
+                onCancel={() => setIsModalVisible(false)}
+                footer={null}
+            >
+                <Form
+                    form={form}
+                    onFinish={handleNewOrder}
+                    layout="vertical"
+                >
+                    <Form.Item 
+                        name="customer_name" 
+                        label="고객사" 
+                        rules={[{ required: true, message: '고객사를 입력해주세요!' }]}
+                        initialValue={!isAdmin ? customerName : ''} 
+                    >
+                        <Input disabled={!isAdmin} /> 
+                    </Form.Item>
+
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요!' }]}>
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요!' }]}>
+                        <Input />
+                    </Form.Item>
+                    
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>
+                            등록
+                        </Button>
+                    </Form.Item>
+                </Form>
+            </Modal>
+            
+            {/* 엑셀 업로드 모달 */}
+            {isAdmin && (
+                <ExcelUploadModal 
+                    isOpen={isExcelModalVisible} 
+                    onClose={() => setIsExcelModalVisible(false)} 
+                    onUploadSuccess={fetchOrders}
+                    customerName={customerName} 
+                />
+            )}
         </Layout>
     );
 };
