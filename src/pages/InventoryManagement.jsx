@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select, Tooltip } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, HistoryOutlined, SwapRightOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select } from 'antd';
+// ★ ImportOutlined 추가
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined, DownloadOutlined, ImportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
@@ -14,7 +15,6 @@ const InventoryManagement = () => {
     const navigate = useNavigate();
     const [userEmail, setUserEmail] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
-    
     const [inventory, setInventory] = useState([]); 
     const [filteredInventory, setFilteredInventory] = useState([]); 
     const [loading, setLoading] = useState(true);
@@ -27,8 +27,8 @@ const InventoryManagement = () => {
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isAddModalVisible, setIsAddModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
-    
     const [isHistoryModalVisible, setIsHistoryModalVisible] = useState(false);
+    
     const [historyData, setHistoryData] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [selectedItemForHistory, setSelectedItemForHistory] = useState(null);
@@ -44,6 +44,7 @@ const InventoryManagement = () => {
         if (e.key === '2') navigate('/orders');
         if (e.key === '3') navigate('/inventory');
         if (e.key === '4') navigate('/history');
+        if (e.key === '5') navigate('/inbound');
     };
 
     const checkUser = async () => {
@@ -55,77 +56,36 @@ const InventoryManagement = () => {
         setIsAdmin(isAdministrator);
         const { data: profile } = await supabase.from('profiles').select('customer_name').eq('id', user.id).single();
         if (profile) setCustomerName(profile.customer_name);
-        fetchInventoryData(); // 이름 변경 (Data Fetching 로직 통합)
+        fetchInventoryData();
     };
 
-    // ★★★ [핵심 수정] 재고와 주문대기 수량을 한 번에 가져와서 계산
     const fetchInventoryData = async () => {
         setLoading(true);
-        
-        // 1. 필터 조건 설정
+        let invQuery = supabase.from('inventory').select('*').order('product_name', { ascending: true }).order('expiration_date', { ascending: true, nullsFirst: false });
+        let ordQuery = supabase.from('orders').select('barcode, quantity').eq('status', '처리대기');
+
         const targetCustomer = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
-        
-        // 2. 재고(inventory) 가져오기
-        let invQuery = supabase
-            .from('inventory')
-            .select('*')
-            .order('product_name', { ascending: true })
-            .order('expiration_date', { ascending: true, nullsFirst: false });
-
-        // 3. 주문(orders) 중 '처리대기'인 것 가져오기
-        let ordQuery = supabase
-            .from('orders')
-            .select('barcode, quantity')
-            .eq('status', '처리대기');
-
         if (!isAdmin && targetCustomer && targetCustomer !== 'Unknown') {
              invQuery = invQuery.eq('customer_name', targetCustomer);
              ordQuery = ordQuery.eq('customer', targetCustomer);
         }
 
-        // 병렬로 데이터 요청 (속도 향상)
         const [invRes, ordRes] = await Promise.all([invQuery, ordQuery]);
+        if (invRes.error) { console.error(invRes.error); setLoading(false); return; }
 
-        if (invRes.error) {
-            console.error(invRes.error);
-            setLoading(false);
-            return;
-        }
-
-        // 4. 가용재고 계산 로직 (선입선출 시뮬레이션)
         const rawInventory = invRes.data || [];
         const pendingOrders = ordRes.data || [];
-
-        // 바코드별 주문 대기 총량 계산
         const pendingMap = {};
-        pendingOrders.forEach(o => {
-            const qty = o.quantity || 1;
-            pendingMap[o.barcode] = (pendingMap[o.barcode] || 0) + qty;
-        });
+        pendingOrders.forEach(o => { const qty = o.quantity || 1; pendingMap[o.barcode] = (pendingMap[o.barcode] || 0) + qty; });
 
-        // 재고 리스트를 순회하며 '주문대기' 수량 차감 (유통기한 빠른 순)
-        // (이미 쿼리에서 정렬되어 옴)
         const calculatedInventory = rawInventory.map(item => {
             const barcode = item.barcode;
-            let allocated = 0; // 이 배치(Row)에 할당된 주문량
-
+            let allocated = 0;
             if (pendingMap[barcode] > 0) {
-                // 남은 주문 대기량이 현재고보다 많으면? -> 현재고만큼 다 씀
-                if (pendingMap[barcode] >= item.quantity) {
-                    allocated = item.quantity;
-                    pendingMap[barcode] -= item.quantity;
-                } else {
-                    // 남은 주문 대기량이 현재고보다 적으면? -> 남은 만큼만 씀
-                    allocated = pendingMap[barcode];
-                    pendingMap[barcode] = 0;
-                }
+                if (pendingMap[barcode] >= item.quantity) { allocated = item.quantity; pendingMap[barcode] -= item.quantity; } 
+                else { allocated = pendingMap[barcode]; pendingMap[barcode] = 0; }
             }
-
-            return {
-                ...item,
-                allocated_quantity: allocated, // 할당량(주문대기)
-                available_quantity: item.quantity - allocated // 가용재고
-            };
+            return { ...item, allocated_quantity: allocated, available_quantity: item.quantity - allocated };
         });
 
         setInventory(calculatedInventory);
@@ -152,32 +112,17 @@ const InventoryManagement = () => {
         setFilteredInventory(result);
     }, [searchText, showOnlyUrgent, alertDays, inventory]);
 
-    const resetFilters = () => {
-        setSearchText('');
-        setShowOnlyUrgent(false);
-    };
-
+    const resetFilters = () => { setSearchText(''); setShowOnlyUrgent(false); };
     useEffect(() => { checkUser(); }, [customerName, isAdmin]); 
-
-    const handleLogout = async () => {
-        await supabase.auth.signOut();
-        navigate('/login');
-    };
+    const handleLogout = async () => { await supabase.auth.signOut(); navigate('/login'); };
 
     const handleDownloadExcel = () => {
         const excelData = filteredInventory.map(item => ({
-            '고객사': item.customer_name,
-            '상품명': item.product_name,
-            '바코드': item.barcode,
-            '유통기한': item.expiration_date || '-',
-            '로케이션': item.location || '-',
-            '현재고': item.quantity,
-            '주문대기': item.allocated_quantity, // ★ 엑셀에도 추가
-            '가용재고': item.available_quantity, // ★ 엑셀에도 추가
-            '안전재고': item.safe_quantity,
-            '상태': item.available_quantity <= item.safe_quantity ? '부족' : '정상'
+            '고객사': item.customer_name, '상품명': item.product_name, '바코드': item.barcode,
+            '유통기한': item.expiration_date || '-', '로케이션': item.location || '-',
+            '현재고': item.quantity, '주문대기': item.allocated_quantity, '가용재고': item.available_quantity,
+            '안전재고': item.safe_quantity, '상태': item.available_quantity <= item.safe_quantity ? '부족' : '정상'
         }));
-
         const ws = XLSX.utils.json_to_sheet(excelData);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "재고목록");
@@ -186,21 +131,12 @@ const InventoryManagement = () => {
 
     const fetchHistory = async (inventoryId) => {
         setHistoryLoading(true);
-        const { data, error } = await supabase
-            .from('inventory_logs')
-            .select('*')
-            .eq('inventory_id', inventoryId)
-            .order('created_at', { ascending: false });
-        
+        const { data, error } = await supabase.from('inventory_logs').select('*').eq('inventory_id', inventoryId).order('created_at', { ascending: false });
         if (!error) setHistoryData(data);
         setHistoryLoading(false);
     };
 
-    const handleShowHistory = (record) => {
-        setSelectedItemForHistory(record);
-        fetchHistory(record.id);
-        setIsHistoryModalVisible(true);
-    };
+    const handleShowHistory = (record) => { setSelectedItemForHistory(record); fetchHistory(record.id); setIsHistoryModalVisible(true); };
 
     const handleAddInventory = async (values) => {
         try {
@@ -216,7 +152,6 @@ const InventoryManagement = () => {
             };
             const { data, error } = await supabase.from('inventory').insert([newItem]).select();
             if (error) throw error;
-
             if (data && data[0]) {
                 await supabase.from('inventory_logs').insert([{
                     inventory_id: data[0].id,
@@ -231,7 +166,6 @@ const InventoryManagement = () => {
                     changed_by: userEmail
                 }]);
             }
-
             message.success('품목이 등록되었습니다.');
             setIsAddModalVisible(false);
             addForm.resetFields();
@@ -261,24 +195,17 @@ const InventoryManagement = () => {
             const changeQty = newQty - prevQty;
             const prevLoc = editingItem.location;
             const newLoc = values.location;
-
             let finalReason = values.reason;
-            if (changeQty === 0 && prevLoc !== newLoc) {
-                finalReason = '로케이션 이동';
-            } else if (changeQty !== 0 && values.reason === '재고 조정') {
-                finalReason = '실사조정'; 
-            }
+            if (changeQty === 0 && prevLoc !== newLoc) finalReason = '로케이션 이동';
+            else if (changeQty !== 0 && values.reason === '재고 조정') finalReason = '실사조정';
 
-            const { error } = await supabase
-                .from('inventory')
-                .update({
-                    location: values.location,
-                    safe_quantity: values.safe_quantity,
-                    quantity: values.quantity, 
-                    expiration_date: values.expiration_date ? values.expiration_date.format('YYYY-MM-DD') : null,
-                    updated_at: new Date()
-                })
-                .eq('id', editingItem.id);
+            const { error } = await supabase.from('inventory').update({
+                location: values.location,
+                safe_quantity: values.safe_quantity,
+                quantity: values.quantity, 
+                expiration_date: values.expiration_date ? values.expiration_date.format('YYYY-MM-DD') : null,
+                updated_at: new Date()
+            }).eq('id', editingItem.id);
 
             if (error) throw error;
 
@@ -298,9 +225,7 @@ const InventoryManagement = () => {
             message.success('수정되었습니다.');
             setIsEditModalVisible(false);
             fetchInventoryData();
-        } catch (error) {
-            message.error('수정 실패: ' + error.message);
-        }
+        } catch (error) { message.error('수정 실패: ' + error.message); }
     };
 
     const urgentCount = inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= alertDays).length;
@@ -311,11 +236,7 @@ const InventoryManagement = () => {
         { title: '상품명', dataIndex: 'product_name', key: 'product_name', sorter: (a, b) => a.product_name.localeCompare(b.product_name) },
         { 
             title: '유통기한', dataIndex: 'expiration_date', key: 'expiration_date',
-            sorter: (a, b) => { 
-                if (!a.expiration_date) return 1;
-                if (!b.expiration_date) return -1;
-                return new Date(a.expiration_date) - new Date(b.expiration_date);
-            },
+            sorter: (a, b) => { if (!a.expiration_date) return 1; if (!b.expiration_date) return -1; return new Date(a.expiration_date) - new Date(b.expiration_date); },
             render: (text) => {
                 if (!text) return <span style={{color:'#ccc'}}>-</ span>;
                 const daysLeft = dayjs(text).diff(dayjs(), 'day');
@@ -324,42 +245,12 @@ const InventoryManagement = () => {
             }
         },
         { title: '로케이션', dataIndex: 'location', sorter: (a, b) => (a.location || '').localeCompare(b.location || ''), render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span> },
-        
-        // ★★★ [수정] 현재고, 주문대기, 가용재고 컬럼 세분화
+        { title: '현재고', dataIndex: 'quantity', sorter: (a, b) => a.quantity - b.quantity, align: 'center', render: (qty) => <b>{qty}</b> },
+        { title: '주문대기', dataIndex: 'allocated_quantity', align: 'center', render: (qty) => <span style={{color: qty > 0 ? 'orange' : '#ccc'}}>{qty > 0 ? `-${qty}` : 0}</span> },
         { 
-            title: '현재고', 
-            dataIndex: 'quantity', 
-            sorter: (a, b) => a.quantity - b.quantity, 
-            align: 'center',
-            render: (qty) => <b>{qty}</b>
+            title: '가용재고', dataIndex: 'available_quantity', align: 'center', sorter: (a, b) => a.available_quantity - b.available_quantity, 
+            render: (qty, record) => <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'blue' }}>{qty}{qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8, fontSize: '10px'}}>부족</Tag>}</span>
         },
-        { 
-            title: (
-                <Tooltip title="주문은 들어왔으나 아직 출고되지 않은 수량">
-                    주문대기 <InfoCircleOutlined />
-                </Tooltip>
-            ),
-            dataIndex: 'allocated_quantity', 
-            align: 'center',
-            render: (qty) => <span style={{color: qty > 0 ? 'orange' : '#ccc'}}>{qty > 0 ? `-${qty}` : 0}</span>
-        },
-        { 
-            title: (
-                <Tooltip title="현재고 - 주문대기 = 판매 가능한 수량">
-                    가용재고 <InfoCircleOutlined />
-                </Tooltip>
-            ),
-            dataIndex: 'available_quantity', 
-            align: 'center',
-            sorter: (a, b) => a.available_quantity - b.available_quantity, 
-            render: (qty, record) => (
-                <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'blue' }}>
-                    {qty}
-                    {qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8, fontSize: '10px'}}>부족</Tag>}
-                </span>
-            )
-        },
-        
         { title: '안전재고', dataIndex: 'safe_quantity', align: 'center', sorter: (a, b) => a.safe_quantity - b.safe_quantity },
         {
             title: '관리', key: 'action', width: 150,
@@ -391,18 +282,17 @@ const InventoryManagement = () => {
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        <Menu.Item key="5" icon={<SettingOutlined />}>설정</Menu.Item>
+                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
+                        <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
                             <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.available_quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
                             <Col span={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
-
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Row justify="space-between" align="middle">
                                 <Col>
@@ -424,20 +314,10 @@ const InventoryManagement = () => {
                                 </Col>
                             </Row>
                         </Card>
-
-                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                            <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
-                            <div>
-                                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
-                                <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
-                            </div>
-                        </div>
-                        
                         <Table columns={columns} dataSource={filteredInventory} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} />
                     </div>
                 </Content>
             </Layout>
-
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
@@ -450,7 +330,6 @@ const InventoryManagement = () => {
                     <Form.Item> <Button type="primary" htmlType="submit" block>등록하기</Button> </Form.Item>
                 </Form>
             </Modal>
-
             <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
@@ -471,7 +350,6 @@ const InventoryManagement = () => {
                     <Form.Item><Button type="primary" htmlType="submit" block>수정 완료</Button></Form.Item>
                 </Form>
             </Modal>
-
             <InventoryUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchInventoryData} customerName={customerName} />
         </Layout>
     );

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined, BarcodeOutlined } from '@ant-design/icons'; // BarcodeOutlined 추가
+// ★ ImportOutlined 추가
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined, BarcodeOutlined, ImportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 import TrackingUploadModal from '../components/TrackingUploadModal';
@@ -9,7 +10,7 @@ import dayjs from 'dayjs';
 
 const { Header, Content, Sider } = Layout;
 const { RangePicker } = DatePicker;
-const { Search } = Input; // ★ 검색 입력창 컴포넌트
+const { Search } = Input;
 
 const OrderManagement = () => {
     const navigate = useNavigate();
@@ -35,61 +36,40 @@ const OrderManagement = () => {
     const [trackingForm] = Form.useForm(); 
     const [customerName, setCustomerName] = useState(''); 
 
-    const {
-        token: { colorBgContainer, borderRadiusLG },
-    } = theme.useToken();
+    const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
         if (e.key === '3') navigate('/inventory');
         if (e.key === '4') navigate('/history');
+        if (e.key === '5') navigate('/inbound');
     };
 
     const checkUser = async () => {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            navigate('/login');
-            return;
-        }
-
+        if (!user) { navigate('/login'); return; }
         setUserEmail(user.email);
         const isAdministrator = user.email === 'kos@cbg.com';
         setIsAdmin(isAdministrator);
-
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('customer_name')
-            .eq('id', user.id)
-            .single();
-
-        if (profile) {
-            setCustomerName(profile.customer_name);
-        }
-
+        const { data: profile } = await supabase.from('profiles').select('customer_name').eq('id', user.id).single();
+        if (profile) setCustomerName(profile.customer_name);
         fetchOrders();
     };
 
     const fetchOrders = async () => {
-        let query = supabase
-            .from('orders')
-            .select('*')
-            .order('created_at', { ascending: false });
-
+        let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
              query = query.eq('customer', nameToFilter); 
         }
-
         const { data, error } = await query;
         
         if (!error) {
             const groups = {};
             data.forEach(item => {
                 const key = item.order_number || `no-order-${item.id}`;
-                
                 if (!groups[key]) {
                     groups[key] = {
                         key: key,
@@ -104,7 +84,6 @@ const OrderManagement = () => {
                 }
                 groups[key].items.push(item);
                 groups[key].total_quantity += (item.quantity || 1);
-                
                 if (item.status === '처리대기') {
                     groups[key].status = '처리대기';
                 }
@@ -118,7 +97,6 @@ const OrderManagement = () => {
 
     useEffect(() => {
         let result = groupedOrders;
-
         if (searchText) {
             const lowerText = searchText.toLowerCase();
             result = result.filter(item => 
@@ -127,76 +105,42 @@ const OrderManagement = () => {
                 (item.customer && item.customer.toLowerCase().includes(lowerText))
             );
         }
-
         if (dateRange) {
             const [start, end] = dateRange;
             const startDate = start.startOf('day');
             const endDate = end.endOf('day');
-
             result = result.filter(item => {
                 const itemDate = dayjs(item.created_at);
                 return itemDate.isAfter(startDate) && itemDate.isBefore(endDate);
             });
         }
-
         if (statusFilter !== 'all') {
             result = result.filter(item => item.status === statusFilter);
         }
-
         setFilteredOrders(result);
     }, [searchText, dateRange, statusFilter, groupedOrders]);
 
-    const resetFilters = () => {
-        setSearchText('');
-        setDateRange(null);
-        setStatusFilter('all');
-    };
+    const resetFilters = () => { setSearchText(''); setDateRange(null); setStatusFilter('all'); };
 
-    useEffect(() => {
-        checkUser();
-    }, [customerName, isAdmin]); 
+    useEffect(() => { checkUser(); }, [customerName, isAdmin]); 
 
-    const handleLogout = async () => {
-        await supabase.auth.signOut();
-        navigate('/login');
-    };
+    const handleLogout = async () => { await supabase.auth.signOut(); navigate('/login'); };
 
-    // ★★★ [추가] 바코드로 상품 정보 검색 함수
     const handleBarcodeSearch = async (barcode) => {
-        if (!barcode) {
-            message.warning('바코드를 입력해주세요.');
-            return;
-        }
-
-        // 현재 입력 중인 고객사 이름 가져오기
+        if (!barcode) { message.warning('바코드를 입력해주세요.'); return; }
         const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : customerName;
-
-        if (!currentCustomer) {
-            message.error('고객사가 선택되지 않았습니다.');
-            return;
-        }
+        if (!currentCustomer) { message.error('고객사가 선택되지 않았습니다.'); return; }
 
         try {
-            // inventory 테이블에서 바코드와 고객사가 일치하는 상품 찾기
-            const { data, error } = await supabase
-                .from('inventory')
-                .select('product_name, quantity')
-                .eq('barcode', barcode)
-                .eq('customer_name', currentCustomer)
-                .single();
-
+            const { data, error } = await supabase.from('inventory').select('product_name, quantity').eq('barcode', barcode).eq('customer_name', currentCustomer).single();
             if (error || !data) {
                 message.error('해당 바코드의 상품을 찾을 수 없습니다. (재고 미등록)');
-                form.setFieldsValue({ product: '' }); // 상품명 초기화
+                form.setFieldsValue({ product: '' });
             } else {
-                // 찾았으면 상품명 자동 입력
                 form.setFieldsValue({ product: data.product_name });
                 message.success(`상품 확인됨: ${data.product_name} (현재고: ${data.quantity}개)`);
             }
-        } catch (err) {
-            console.error(err);
-            message.error('검색 중 오류가 발생했습니다.');
-        }
+        } catch (err) { message.error('검색 중 오류가 발생했습니다.'); }
     };
 
     const handleNewOrder = async (values) => {
@@ -211,17 +155,13 @@ const OrderManagement = () => {
                 created_at: new Date(),
                 status: '처리대기',
             };
-
             const { error } = await supabase.from('orders').insert([orderData]);
-
             if (error) throw error;
             message.success('주문 등록 완료!');
             form.resetFields();
             setIsModalVisible(false);
             fetchOrders(); 
-        } catch (error) {
-            message.error('주문 등록 실패: ' + error.message);
-        }
+        } catch (error) { message.error('주문 등록 실패: ' + error.message); }
     };
 
     const openTrackingModal = (orderNumber, items) => {
@@ -233,50 +173,34 @@ const OrderManagement = () => {
 
     const handleShipOrder = async (values) => {
         try {
-            let query = supabase.from('orders').update({ 
-                status: '출고완료',
-                tracking_number: values.tracking_input 
-            });
-
+            let query = supabase.from('orders').update({ status: '출고완료', tracking_number: values.tracking_input });
             if (selectedOrderNumber && selectedOrderNumber !== '-') {
                 query = query.eq('order_number', selectedOrderNumber);
             } else {
                 query = query.in('id', selectedOrderIds);
             }
-
             const { error } = await query;
             if (error) throw error;
-            
             message.success('처리 완료');
             setIsTrackingModalVisible(false);
             fetchOrders();
-        } catch (error) {
-            message.error('처리 실패: ' + error.message);
-        }
+        } catch (error) { message.error('처리 실패: ' + error.message); }
     };
 
     const handleCancelShipment = async (orderNumber, items) => {
         try {
-            let query = supabase.from('orders').update({ 
-                status: '처리대기',
-                tracking_number: null 
-            });
-
+            let query = supabase.from('orders').update({ status: '처리대기', tracking_number: null });
             if (orderNumber && orderNumber !== '-') {
                 query = query.eq('order_number', orderNumber);
             } else {
                 const ids = items.map(i => i.id);
                 query = query.in('id', ids);
             }
-
             const { error } = await query;
             if (error) throw error;
-            
             message.success('취소 완료');
             fetchOrders();
-        } catch (error) {
-            message.error('취소 실패: ' + error.message);
-        }
+        } catch (error) { message.error('취소 실패: ' + error.message); }
     };
 
     const expandedRowRender = (record) => {
@@ -284,12 +208,7 @@ const OrderManagement = () => {
             { title: '상품명', dataIndex: 'product', key: 'product' },
             { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
             { title: '수량', dataIndex: 'quantity', key: 'quantity' },
-            { 
-                title: '개별 상태', 
-                dataIndex: 'status', 
-                key: 'status',
-                render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag>
-            },
+            { title: '개별 상태', dataIndex: 'status', key: 'status', render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag> },
         ];
         return <Table columns={itemColumns} dataSource={record.items} pagination={false} size="small" />;
     };
@@ -300,39 +219,19 @@ const OrderManagement = () => {
         { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '총 품목 수', key: 'item_count', render: (_, record) => `${record.items.length}종 (${record.total_quantity}개)` },
         { title: '송장번호', dataIndex: 'tracking_number', key: 'tracking_number', render: (text) => text || <span style={{color: '#ccc'}}>(미입력)</span> },
-        { 
-          title: '통합 상태', dataIndex: 'status', key: 'status',
-          render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag>
-        },
+        { title: '통합 상태', dataIndex: 'status', key: 'status', render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag> },
         {
             title: '관리', key: 'action', width: 200,
             render: (_, record) => {
                 if (record.status === '처리대기') {
                     return isAdmin && (
-                        <Button 
-                            size="small" type="primary" ghost icon={<EditOutlined />}
-                            onClick={() => openTrackingModal(record.order_number, record.items)}
-                        >
-                            출고 처리
-                        </Button>
+                        <Button size="small" type="primary" ghost icon={<EditOutlined />} onClick={() => openTrackingModal(record.order_number, record.items)}>출고 처리</Button>
                     );
                 }
                 return (
                     <div style={{ display: 'flex', gap: '5px' }}>
-                        {isAdmin && (
-                            <Button 
-                                size="small" type="default" icon={<EditOutlined />}
-                                onClick={() => openTrackingModal(record.order_number, record.items)}
-                            >
-                                송장
-                            </Button>
-                        )}
-                        <Popconfirm
-                            title="취소하시겠습니까?"
-                            onConfirm={() => handleCancelShipment(record.order_number, record.items)}
-                            okText="예"
-                            cancelText="아니오"
-                        >
+                        {isAdmin && <Button size="small" type="default" icon={<EditOutlined />} onClick={() => openTrackingModal(record.order_number, record.items)}>송장</Button>}
+                        <Popconfirm title="취소하시겠습니까?" onConfirm={() => handleCancelShipment(record.order_number, record.items)} okText="예" cancelText="아니오">
                             <Button size="small" danger icon={<UndoOutlined />}>취소</Button>
                         </Popconfirm>
                     </div>
@@ -353,27 +252,23 @@ const OrderManagement = () => {
             </Header>
             <Layout>
                 <Sider theme="light" width={200}>
-                    <Menu 
-                        mode="inline" 
-                        defaultSelectedKeys={['2']} 
-                        style={{ height: '100%', borderRight: 0 }}
-                        onClick={handleMenuClick}
-                    >
+                    <Menu mode="inline" defaultSelectedKeys={['2']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        <Menu.Item key="5" icon={<SettingOutlined />}>설정</Menu.Item>
+                        {/* ★ 입고 관리 추가 */}
+                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
+                        <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Space wrap>
-                                <RangePicker onChange={(dates) => setDateRange(dates)} value={dateRange} placeholder={['시작일', '종료일']} />
+                                <RangePicker onChange={(dates) => setDateRange(dates)} value={dateRange} />
                                 <Input placeholder="주문번호, 송장번호, 고객사 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
                                 <Radio.Group value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} buttonStyle="solid">
                                     <Radio.Button value="all">전체</Radio.Button>
@@ -392,13 +287,11 @@ const OrderManagement = () => {
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
                         </div>
-                        
                         <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} />
                     </div>
                 </Content>
             </Layout>
             
-            {/* 신규 주문 등록 모달 (바코드 검색 기능 추가) */}
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}>
@@ -407,20 +300,12 @@ const OrderManagement = () => {
                     <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}>
                         <Input placeholder="예: ORDER-001" /> 
                     </Form.Item>
-                    
-                    {/* ★★★ [수정] 바코드 검색 입력창 (Input -> Search) */}
                     <Form.Item name="barcode" label="바코드 (스캔 또는 입력 후 엔터)" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
-                        <Search 
-                            placeholder="바코드를 입력하고 엔터를 누르세요" 
-                            onSearch={handleBarcodeSearch} // 검색 실행 함수 연결
-                            enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>}
-                        />
+                        <Search placeholder="바코드를 입력하고 엔터를 누르세요" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
                     </Form.Item>
-
                     <Form.Item name="product" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
                         <Input placeholder="바코드 조회 시 자동 입력됨" /> 
                     </Form.Item>
-
                     <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}>
                         <InputNumber min={1} style={{ width: '100%' }} />
                     </Form.Item>
