@@ -26,8 +26,7 @@ const OrderManagement = () => {
     
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
-    // ★ 출고 처리를 위한 선택된 주문 아이템들 저장
-    const [selectedOrderItems, setSelectedOrderItems] = useState([]); 
+    const [selectedOrderItems, setSelectedOrderItems] = useState([]);
 
     const [searchText, setSearchText] = useState('');
     const [dateRange, setDateRange] = useState(null);
@@ -50,21 +49,40 @@ const OrderManagement = () => {
     const checkUser = async () => {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { navigate('/login'); return; }
+
+        if (!user) {
+            navigate('/login');
+            return;
+        }
+
         setUserEmail(user.email);
         const isAdministrator = user.email === 'kos@cbg.com';
         setIsAdmin(isAdministrator);
-        const { data: profile } = await supabase.from('profiles').select('customer_name').eq('id', user.id).single();
-        if (profile) setCustomerName(profile.customer_name);
+
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('customer_name')
+            .eq('id', user.id)
+            .single();
+
+        if (profile) {
+            setCustomerName(profile.customer_name);
+        }
+
         fetchOrders();
     };
 
     const fetchOrders = async () => {
-        let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
+        let query = supabase
+            .from('orders')
+            .select('*')
+            .order('created_at', { ascending: false });
+
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
              query = query.eq('customer', nameToFilter); 
         }
+
         const { data, error } = await query;
         
         if (!error) {
@@ -98,6 +116,7 @@ const OrderManagement = () => {
 
     useEffect(() => {
         let result = groupedOrders;
+
         if (searchText) {
             const lowerText = searchText.toLowerCase();
             result = result.filter(item => 
@@ -106,40 +125,103 @@ const OrderManagement = () => {
                 (item.customer && item.customer.toLowerCase().includes(lowerText))
             );
         }
+
         if (dateRange) {
             const [start, end] = dateRange;
             const startDate = start.startOf('day');
             const endDate = end.endOf('day');
+
             result = result.filter(item => {
                 const itemDate = dayjs(item.created_at);
                 return itemDate.isAfter(startDate) && itemDate.isBefore(endDate);
             });
         }
+
         if (statusFilter !== 'all') {
             result = result.filter(item => item.status === statusFilter);
         }
+
         setFilteredOrders(result);
     }, [searchText, dateRange, statusFilter, groupedOrders]);
 
-    const resetFilters = () => { setSearchText(''); setDateRange(null); setStatusFilter('all'); };
-    useEffect(() => { checkUser(); }, [customerName, isAdmin]); 
-    const handleLogout = async () => { await supabase.auth.signOut(); navigate('/login'); };
+    const resetFilters = () => {
+        setSearchText('');
+        setDateRange(null);
+        setStatusFilter('all');
+    };
 
+    useEffect(() => {
+        checkUser();
+    }, [customerName, isAdmin]); 
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        navigate('/login');
+    };
+
+    // ★★★ [수정됨] 바코드 검색 함수 개선
     const handleBarcodeSearch = async (barcode) => {
-        if (!barcode) { message.warning('바코드를 입력해주세요.'); return; }
-        const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : customerName;
-        if (!currentCustomer) { message.error('고객사가 선택되지 않았습니다.'); return; }
+        if (!barcode) { 
+            message.warning('바코드를 입력해주세요.'); 
+            return; 
+        }
+
+        // 공백 제거
+        const cleanBarcode = barcode.trim();
+        
+        // 고객사 이름 확인 (관리자면 입력값, 고객사면 로그인 정보)
+        // ★ 여기서 customerName 상태가 늦게 업데이트될 수 있으므로 form 값 우선 확인
+        const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : (customerName || form.getFieldValue('customer_input'));
+
+        if (!currentCustomer) {
+            message.error('고객사 정보가 확인되지 않습니다. (잠시 후 다시 시도해주세요)');
+            return;
+        }
 
         try {
-            const { data, error } = await supabase.from('inventory').select('product_name, quantity').eq('barcode', barcode).eq('customer_name', currentCustomer).single();
-            if (error || !data) {
-                message.error('해당 바코드의 상품을 찾을 수 없습니다.');
-                form.setFieldsValue({ product: '' });
-            } else {
-                form.setFieldsValue({ product: data.product_name });
-                message.success(`상품 확인됨: ${data.product_name} (현재고: ${data.quantity}개)`);
+            // 재고 테이블에서 검색
+            const { data, error } = await supabase
+                .from('inventory')
+                .select('product_name, quantity, customer_name')
+                .eq('barcode', cleanBarcode)
+                // .eq('customer_name', currentCustomer) // ★ 일단 바코드로만 찾고 아래에서 필터링 (더 정확함)
+                .maybeSingle(); // single() 대신 maybeSingle() 사용 (에러 방지)
+
+            // 1. 바코드 자체가 없는 경우
+            if (!data) {
+                // 혹시 여러 개가 나올 수 있으니 전체 검색
+                 const { data: multipleData } = await supabase
+                    .from('inventory')
+                    .select('product_name, quantity, customer_name')
+                    .eq('barcode', cleanBarcode);
+                
+                 // 내 고객사 물건이 있는지 찾기
+                 const myItem = multipleData?.find(d => d.customer_name === currentCustomer);
+
+                 if (myItem) {
+                    form.setFieldsValue({ product: myItem.product_name });
+                    message.success(`상품 확인: ${myItem.product_name}`);
+                 } else {
+                    message.error('해당 바코드의 상품을 찾을 수 없습니다.');
+                    form.setFieldsValue({ product: '' });
+                 }
+                 return;
             }
-        } catch (err) { message.error('검색 중 오류가 발생했습니다.'); }
+
+            // 2. 찾았는데 내 물건이 아닌 경우
+            if (data.customer_name !== currentCustomer) {
+                message.warning(`해당 바코드는 다른 고객사(${data.customer_name})의 상품입니다.`);
+                return;
+            }
+
+            // 3. 정상 찾음
+            form.setFieldsValue({ product: data.product_name });
+            message.success(`상품 확인: ${data.product_name} (현재고: ${data.quantity}개)`);
+
+        } catch (err) {
+            console.error(err);
+            message.error('검색 중 오류가 발생했습니다.');
+        }
     };
 
     const handleNewOrder = async (values) => {
@@ -154,59 +236,54 @@ const OrderManagement = () => {
                 created_at: new Date(),
                 status: '처리대기',
             };
+
             const { error } = await supabase.from('orders').insert([orderData]);
+
             if (error) throw error;
             message.success('주문 등록 완료!');
             form.resetFields();
             setIsModalVisible(false);
             fetchOrders(); 
-        } catch (error) { message.error('주문 등록 실패: ' + error.message); }
+        } catch (error) {
+            message.error('주문 등록 실패: ' + error.message);
+        }
     };
 
     const openTrackingModal = (orderNumber, items) => {
         setSelectedOrderNumber(orderNumber);
         setSelectedOrderIds(items.map(i => i.id));
-        setSelectedOrderItems(items); // ★ 아이템 정보 저장 (재고 차감을 위해)
+        setSelectedOrderItems(items);
         trackingForm.resetFields(); 
         setIsTrackingModalVisible(true);
     };
 
-    // ★★★ [핵심] 출고 시 재고 차감 및 로그 기록 (선입선출)
     const processOutboundInventory = async (items) => {
         for (const orderItem of items) {
             let remainingQty = orderItem.quantity || 1;
 
-            // 1. 유통기한 빠른 순으로 재고 조회
             const { data: stocks } = await supabase
                 .from('inventory')
                 .select('*')
                 .eq('barcode', orderItem.barcode)
                 .eq('customer_name', orderItem.customer)
-                .gt('quantity', 0) // 재고가 있는 것만
+                .gt('quantity', 0)
                 .order('expiration_date', { ascending: true, nullsLast: true });
 
-            if (!stocks || stocks.length === 0) {
-                console.warn(`재고 부족: ${orderItem.product} (${orderItem.barcode})`);
-                continue; // 재고 없으면 스킵 (마이너스 처리 안함)
-            }
+            if (!stocks || stocks.length === 0) continue;
 
-            // 2. 순서대로 차감
             for (const stock of stocks) {
                 if (remainingQty <= 0) break;
-
                 const deductAmount = Math.min(stock.quantity, remainingQty);
                 const newStockQty = stock.quantity - deductAmount;
 
-                // 재고 업데이트
                 await supabase.from('inventory').update({ quantity: newStockQty }).eq('id', stock.id);
 
-                // 로그 기록
                 await supabase.from('inventory_logs').insert([{
                     inventory_id: stock.id,
                     customer_name: stock.customer_name,
                     product_name: stock.product_name,
                     previous_quantity: stock.quantity,
-                    change_quantity: -deductAmount, // 마이너스 처리
+                    change_quantity: -deductAmount,
                     new_quantity: newStockQty,
                     previous_location: stock.location,
                     new_location: stock.location,
@@ -219,17 +296,14 @@ const OrderManagement = () => {
         }
     };
 
-    // ★★★ [핵심] 출고 취소 시 재고 복구
     const processCancelInventory = async (items) => {
         for (const orderItem of items) {
-            // 가장 최근에 입고된(혹은 유통기한 늦은) 재고에 다시 채워넣거나, 
-            // 단순하게 해당 바코드의 첫 번째 재고에 수량을 더해줍니다.
             const { data: stocks } = await supabase
                 .from('inventory')
                 .select('*')
                 .eq('barcode', orderItem.barcode)
                 .eq('customer_name', orderItem.customer)
-                .order('expiration_date', { ascending: false }) // 유통기한 늦은 순
+                .order('expiration_date', { ascending: false })
                 .limit(1);
 
             if (stocks && stocks.length > 0) {
@@ -237,10 +311,8 @@ const OrderManagement = () => {
                 const addAmount = orderItem.quantity || 1;
                 const newStockQty = stock.quantity + addAmount;
 
-                // 재고 복구
                 await supabase.from('inventory').update({ quantity: newStockQty }).eq('id', stock.id);
 
-                // 로그 기록
                 await supabase.from('inventory_logs').insert([{
                     inventory_id: stock.id,
                     customer_name: stock.customer_name,
@@ -259,10 +331,7 @@ const OrderManagement = () => {
 
     const handleShipOrder = async (values) => {
         try {
-            // 1. 재고 차감 로직 실행
             await processOutboundInventory(selectedOrderItems);
-
-            // 2. 주문 상태 업데이트
             let query = supabase.from('orders').update({ status: '출고완료', tracking_number: values.tracking_input });
             if (selectedOrderNumber && selectedOrderNumber !== '-') {
                 query = query.eq('order_number', selectedOrderNumber);
@@ -271,7 +340,6 @@ const OrderManagement = () => {
             }
             const { error } = await query;
             if (error) throw error;
-            
             message.success('출고 처리 완료 (재고 차감됨)');
             setIsTrackingModalVisible(false);
             fetchOrders();
@@ -280,10 +348,7 @@ const OrderManagement = () => {
 
     const handleCancelShipment = async (orderNumber, items) => {
         try {
-            // 1. 재고 복구 로직 실행
             await processCancelInventory(items);
-
-            // 2. 주문 상태 업데이트
             let query = supabase.from('orders').update({ status: '처리대기', tracking_number: null });
             if (orderNumber && orderNumber !== '-') {
                 query = query.eq('order_number', orderNumber);
@@ -293,7 +358,6 @@ const OrderManagement = () => {
             }
             const { error } = await query;
             if (error) throw error;
-            
             message.success('출고 취소 완료 (재고 복구됨)');
             fetchOrders();
         } catch (error) { message.error('취소 실패: ' + error.message); }
@@ -382,24 +446,37 @@ const OrderManagement = () => {
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
                         </div>
-                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} scroll={{ x: 'max-content' }} />
+                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} />
                     </div>
                 </Content>
             </Layout>
             
-            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null} style={{ top: 20 }}>
+            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
-                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
-                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}><Input placeholder="예: ORDER-001" /></Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}><Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} /></Form.Item>
-                    <Form.Item name="product" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}><Input /></Form.Item>
-                    <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
+                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}>
+                        <Input disabled={!isAdmin} /> 
+                    </Form.Item>
+                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}>
+                        <Input placeholder="예: ORDER-001" /> 
+                    </Form.Item>
+                    
+                    {/* ★ 바코드 검색 (Search) + 엔터 시 검색 실행 */}
+                    <Form.Item name="barcode" label="바코드 (스캔 또는 입력 후 엔터)" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
+                        <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
+                    </Form.Item>
+
+                    <Form.Item name="product" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
+                        <Input placeholder="바코드 조회 시 자동 입력됨" /> 
+                    </Form.Item>
+                    <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}>
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                    </Form.Item>
                     <Form.Item name="tracking_number" label="송장번호 (선택)"><Input placeholder="미입력 시 공란" /></Form.Item>
                     <Form.Item><Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button></Form.Item>
                 </Form>
             </Modal>
 
-            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null} style={{ top: 20 }}>
+            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null}>
                 <p>주문번호: <b>{selectedOrderNumber}</b></p>
                 <p style={{marginBottom: 20, color: 'gray'}}>송장번호를 입력하면 해당 주문의 모든 상품이 '출고완료' 처리됩니다.</p>
                 <Form form={trackingForm} onFinish={handleShipOrder} layout="vertical">
