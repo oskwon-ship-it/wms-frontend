@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, HistoryOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, HistoryOutlined, SwapRightOutlined } from '@ant-design/icons'; // SwapRightOutlined 아이콘 추가
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
-import * as XLSX from 'xlsx'; // 엑셀 다운로드를 위해 필요
+import * as XLSX from 'xlsx';
 
 const { Header, Content, Sider } = Layout;
 const { Option } = Select;
@@ -28,7 +28,6 @@ const InventoryManagement = () => {
     const [isAddModalVisible, setIsAddModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
     
-    // ★ [추가] 이력 조회 모달 상태
     const [isHistoryModalVisible, setIsHistoryModalVisible] = useState(false);
     const [historyData, setHistoryData] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
@@ -109,7 +108,6 @@ const InventoryManagement = () => {
         navigate('/login');
     };
 
-    // ★ [추가] 엑셀 다운로드 기능
     const handleDownloadExcel = () => {
         const excelData = filteredInventory.map(item => ({
             '고객사': item.customer_name,
@@ -128,7 +126,6 @@ const InventoryManagement = () => {
         XLSX.writeFile(wb, `재고목록_${dayjs().format('YYYYMMDD')}.xlsx`);
     };
 
-    // ★ [추가] 이력(History) 불러오기
     const fetchHistory = async (inventoryId) => {
         setHistoryLoading(true);
         const { data, error } = await supabase
@@ -163,7 +160,7 @@ const InventoryManagement = () => {
             const { data, error } = await supabase.from('inventory').insert([newItem]).select();
             if (error) throw error;
 
-            // 2. 로그 기록 (신규 입고)
+            // 2. 로그 기록
             if (data && data[0]) {
                 await supabase.from('inventory_logs').insert([{
                     inventory_id: data[0].id,
@@ -172,6 +169,9 @@ const InventoryManagement = () => {
                     previous_quantity: 0,
                     change_quantity: data[0].quantity,
                     new_quantity: data[0].quantity,
+                    // ★ [추가] 신규 등록 시 로케이션 기록
+                    previous_location: null,
+                    new_location: data[0].location,
                     reason: '신규 등록',
                     changed_by: userEmail
                 }]);
@@ -194,19 +194,22 @@ const InventoryManagement = () => {
             safe_quantity: record.safe_quantity,
             quantity: record.quantity,
             expiration_date: record.expiration_date ? dayjs(record.expiration_date) : null,
-            reason: '재고 조정' // 기본 사유
+            reason: '재고 조정' 
         });
         setIsEditModalVisible(true);
     };
 
-    // ★ [수정] 재고 수정 및 로그 기록
+    // ★ [수정] 재고 수정 시 로케이션 변경 기록
     const handleUpdateInventory = async (values) => {
         try {
             const prevQty = editingItem.quantity;
             const newQty = values.quantity;
             const changeQty = newQty - prevQty;
 
-            // 1. 재고 업데이트
+            // ★ [추가] 이전/이후 로케이션 비교
+            const prevLoc = editingItem.location;
+            const newLoc = values.location;
+
             const { error } = await supabase
                 .from('inventory')
                 .update({
@@ -220,7 +223,7 @@ const InventoryManagement = () => {
 
             if (error) throw error;
 
-            // 2. 로그 기록 (변동이 있거나 정보가 수정된 경우)
+            // 2. 로그 기록 (수량 또는 로케이션 변동 시 기록)
             await supabase.from('inventory_logs').insert([{
                 inventory_id: editingItem.id,
                 customer_name: editingItem.customer_name,
@@ -228,7 +231,10 @@ const InventoryManagement = () => {
                 previous_quantity: prevQty,
                 change_quantity: changeQty,
                 new_quantity: newQty,
-                reason: values.reason, // 입력받은 사유
+                // ★ [추가] 로케이션 정보 저장
+                previous_location: prevLoc,
+                new_location: newLoc,
+                reason: values.reason, 
                 changed_by: userEmail
             }]);
 
@@ -263,7 +269,6 @@ const InventoryManagement = () => {
         { title: '로케이션', dataIndex: 'location', sorter: (a, b) => (a.location || '').localeCompare(b.location || ''), render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span> },
         { title: '현재고', dataIndex: 'quantity', sorter: (a, b) => a.quantity - b.quantity, render: (qty, record) => <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>{qty} 개{qty <= record.safe_quantity && <Tag color="orange" style={{marginLeft: 8}}>부족</Tag>}</span> },
         { title: '안전재고', dataIndex: 'safe_quantity', sorter: (a, b) => a.safe_quantity - b.safe_quantity },
-        // ★ [수정] 관리 버튼 (이력 보기 추가)
         {
             title: '관리', key: 'action', width: 180,
             render: (_, record) => (
@@ -326,7 +331,6 @@ const InventoryManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
                             <div>
-                                {/* ★ [추가] 엑셀 다운로드 버튼 */}
                                 <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginRight: 8 }}>목록 다운로드</Button>
                                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
                                 <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
@@ -338,7 +342,6 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
-            {/* 신규 등록 모달 */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
@@ -352,33 +355,29 @@ const InventoryManagement = () => {
                 </Form>
             </Modal>
 
-            {/* 수정 모달 (사유 입력 추가) */}
-            <Modal title="재고 정보 수정 (관리자)" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
+            <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
                     <Form.Item name="expiration_date" label="유통기한"><DatePicker style={{ width: '100%' }} /></Form.Item>
                     <Form.Item name="location" label="로케이션"><Input /></Form.Item>
                     <Form.Item name="quantity" label="현재 재고"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item>
                     <Form.Item name="safe_quantity" label="안전재고 기준"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item>
-                    
-                    {/* ★ [추가] 변경 사유 선택 */}
                     <Form.Item name="reason" label="변경 사유" rules={[{ required: true, message: '사유를 선택해주세요' }]}>
                         <Select>
                             <Option value="입고">입고</Option>
                             <Option value="출고">출고</Option>
+                            <Option value="로케이션 이동">로케이션 이동</Option>
                             <Option value="실사조정">실사 재고 조정</Option>
                             <Option value="파손/분실">파손/분실</Option>
-                            <Option value="반품입고">반품 입고</Option>
                             <Option value="기타">기타</Option>
                         </Select>
                     </Form.Item>
-                    
                     <Form.Item><Button type="primary" htmlType="submit" block>수정 완료</Button></Form.Item>
                 </Form>
             </Modal>
 
-            {/* ★ [추가] 이력 조회 모달 */}
-            <Modal title={`재고 수불 이력 (${selectedItemForHistory?.product_name})`} open={isHistoryModalVisible} onCancel={() => setIsHistoryModalVisible(false)} footer={null} width={700}>
+            {/* ★ [수정됨] 이력 조회 모달에 로케이션 변경 추가 */}
+            <Modal title={`재고 수불 이력 (${selectedItemForHistory?.product_name})`} open={isHistoryModalVisible} onCancel={() => setIsHistoryModalVisible(false)} footer={null} width={800}>
                 <Table 
                     dataSource={historyData} 
                     rowKey="id"
@@ -387,6 +386,14 @@ const InventoryManagement = () => {
                     columns={[
                         { title: '일시', dataIndex: 'created_at', render: t => new Date(t).toLocaleString() },
                         { title: '구분', dataIndex: 'reason', render: t => <Tag color="geekblue">{t}</Tag> },
+                        { 
+                            title: '로케이션 변경', 
+                            key: 'location',
+                            // ★ 이전 위치와 새 위치가 다르면 화살표로 표시, 같으면 '-'
+                            render: (_, r) => (r.previous_location !== r.new_location && r.new_location) 
+                                ? <span>{r.previous_location || '(없음)'} <SwapRightOutlined /> {r.new_location}</span> 
+                                : '-' 
+                        },
                         { title: '변경전', dataIndex: 'previous_quantity' },
                         { title: '변동', dataIndex: 'change_quantity', render: (q) => <span style={{color: q > 0 ? 'blue' : 'red'}}>{q > 0 ? `+${q}` : q}</span> },
                         { title: '변경후', dataIndex: 'new_quantity', render: q => <b>{q}</b> },
