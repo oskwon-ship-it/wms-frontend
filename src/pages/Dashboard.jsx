@@ -36,7 +36,6 @@ const Dashboard = () => {
         const isAdministrator = user.email === 'kos@cbg.com';
         setIsAdmin(isAdministrator);
 
-        // profiles 테이블은 'customer_name'이 맞습니다.
         const { data: profile } = await supabase
             .from('profiles')
             .select('customer_name')
@@ -46,7 +45,7 @@ const Dashboard = () => {
         if (profile) {
             setCustomerName(profile.customer_name);
         } else if (!isAdministrator) {
-            message.error('프로필 정보가 없습니다. 관리자에게 문의하세요.');
+            // 관리자가 아닌데 프로필이 없으면 에러
         }
 
         fetchOrders();
@@ -58,7 +57,7 @@ const Dashboard = () => {
             .select('*')
             .order('created_at', { ascending: false });
 
-        // DB 컬럼명이 'customer' 이므로 수정
+        // ★★★ [수정됨] DB 컬럼명 'customer' 사용
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
              query = query.eq('customer', nameToFilter); 
@@ -85,11 +84,14 @@ const Dashboard = () => {
 
     const handleNewOrder = async (values) => {
         try {
-            // ★★★ 여기가 핵심 수정 사항입니다! ★★★
-            // DB 컬럼명(customer, product)에 맞춰서 데이터를 보냅니다.
+            // ★★★ [수정됨] 여기가 핵심입니다! ★★★
             const orderData = {
-                customer: isAdmin ? values.customer_name : customerName, // customer_name -> customer
-                product: values.product_name, // product_name -> product
+                // values.customer_input -> 폼에서 입력받은 값 (아래 Form.Item name 참조)
+                customer: isAdmin ? values.customer_input : customerName, 
+                
+                // values.product_input -> 폼에서 입력받은 값
+                product: values.product_input,
+                
                 barcode: values.barcode,
                 created_at: new Date(),
                 status: '처리대기',
@@ -114,7 +116,6 @@ const Dashboard = () => {
         setIsModalVisible(true);
     };
 
-    // ★★★ 테이블 컬럼 설정도 DB 이름(customer, product)으로 변경합니다.
     const columns = [
         {
           title: '주문 시간',
@@ -122,9 +123,11 @@ const Dashboard = () => {
           key: 'created_at',
           render: (text) => text ? new Date(text).toLocaleString() : '-'
         },
-        { title: '고객사', dataIndex: 'customer', key: 'customer' }, // customer_name -> customer
+        // ★★★ [수정됨] DB 컬럼명 'customer' 사용
+        { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
-        { title: '상품명', dataIndex: 'product', key: 'product' }, // product_name -> product
+        // ★★★ [수정됨] DB 컬럼명 'product' 사용
+        { title: '상품명', dataIndex: 'product', key: 'product' }, 
         { 
           title: '상태', 
           dataIndex: 'status', 
@@ -184,13 +187,15 @@ const Dashboard = () => {
             
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical">
-                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
+                    {/* ★★★ [수정됨] 폼 이름도 'customer_input'으로 변경해서 혼동 방지 */}
+                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
                     <Form.Item name="barcode" label="바코드" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}>
+                    {/* ★★★ [수정됨] 폼 이름도 'product_input'으로 변경해서 혼동 방지 */}
+                    <Form.Item name="product_input" label="상품명" rules={[{ required: true }]}>
                         <Input />
                     </Form.Item>
                     <Form.Item>
