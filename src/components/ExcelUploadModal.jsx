@@ -1,21 +1,24 @@
+// src/components/ExcelUploadModal.jsx 파일의 전체 내용
+
 import React, { useState } from 'react';
 import { Modal, Upload, Button, Table, message } from 'antd';
 import { InboxOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
-import { supabase } from '../supabaseClient'; // 중괄호 { } 사용
+import { supabase } from '../supabaseClient'; 
 
 const { Dragger } = Upload;
 
-const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
+// ★★★ customerName을 props로 받습니다.
+const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) => {
   const [fileList, setFileList] = useState([]);
   const [previewData, setPreviewData] = useState([]);
   const [uploading, setUploading] = useState(false);
   
   // 1. 양식 다운로드 함수 (Template Download)
   const handleDownloadTemplate = () => {
-      // 엑셀 헤더 정의
+      // 엑셀 헤더 정의 (고객사 항목은 이제 필요하지 않습니다.)
       const headers = [
-          '고객사', '바코드', '상품명', '수량', '수취인명', '연락처', '배송지 주소'
+          '바코드', '상품명', '수량', '수취인명', '연락처', '배송지 주소'
       ]; 
       
       const ws = XLSX.utils.aoa_to_sheet([headers]);
@@ -49,18 +52,28 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
       message.error('업로드할 데이터가 없습니다.');
       return;
     }
+    
+    // 고객사 이름이 없으면 업로드 중지 (DB에 NULL로 들어가는 것 방지)
+    if (!customerName) {
+        message.error('로그인된 고객사 정보가 없습니다. 관리자에게 문의하세요.');
+        return;
+    }
 
     setUploading(true);
 
     try {
       // 엑셀 한글 제목 -> DB 영어 컬럼명 변환
       const formattedData = previewData.map(item => ({
-        customer_name: item['고객사'],
-        barcode: item['바코드'],
-        product_name: item['상품명'],
+        // ★★★ FIX: customerName을 props로 받은 값으로 강제 주입
+        customer_name: customerName, 
+        
+        // 엑셀 파일에서 바코드, 상품명 등 읽음
+        barcode: item['바코드'] || null, 
+        product_name: item['상품명'] || null,
+        
         created_at: new Date(),
-        status: '처리대기', // 필수 컬럼 FIX 1
-        tracking_number: null // 필수 컬럼 FIX 2: 일단 NULL 처리
+        status: '처리대기', 
+        tracking_number: null 
       }));
 
       const { error } = await supabase
@@ -118,7 +131,7 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess }) => {
       >
         <p className="ant-upload-drag-icon"><InboxOutlined /></p>
         <p className="ant-upload-text">엑셀 파일을 여기로 드래그하세요</p>
-        <p className="ant-upload-hint">업로드 전에 [주문 양식 다운로드] 버튼을 눌러 형식을 확인하세요.</p>
+        <p className="ant-upload-hint">업로드 전에 [주문 양식 다운로드] 버튼을 눌러 형식을 확인하세요. (고객사명은 자동 입력됩니다.)</p>
       </Dragger>
 
       {previewData.length > 0 && (
