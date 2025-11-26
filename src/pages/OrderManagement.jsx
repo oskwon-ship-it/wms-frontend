@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
-// ★ ImportOutlined 추가
 import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined, BarcodeOutlined, ImportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
@@ -65,7 +64,6 @@ const OrderManagement = () => {
              query = query.eq('customer', nameToFilter); 
         }
         const { data, error } = await query;
-        
         if (!error) {
             const groups = {};
             data.forEach(item => {
@@ -121,27 +119,8 @@ const OrderManagement = () => {
     }, [searchText, dateRange, statusFilter, groupedOrders]);
 
     const resetFilters = () => { setSearchText(''); setDateRange(null); setStatusFilter('all'); };
-
     useEffect(() => { checkUser(); }, [customerName, isAdmin]); 
-
     const handleLogout = async () => { await supabase.auth.signOut(); navigate('/login'); };
-
-    const handleBarcodeSearch = async (barcode) => {
-        if (!barcode) { message.warning('바코드를 입력해주세요.'); return; }
-        const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : customerName;
-        if (!currentCustomer) { message.error('고객사가 선택되지 않았습니다.'); return; }
-
-        try {
-            const { data, error } = await supabase.from('inventory').select('product_name, quantity').eq('barcode', barcode).eq('customer_name', currentCustomer).single();
-            if (error || !data) {
-                message.error('해당 바코드의 상품을 찾을 수 없습니다. (재고 미등록)');
-                form.setFieldsValue({ product: '' });
-            } else {
-                form.setFieldsValue({ product: data.product_name });
-                message.success(`상품 확인됨: ${data.product_name} (현재고: ${data.quantity}개)`);
-            }
-        } catch (err) { message.error('검색 중 오류가 발생했습니다.'); }
-    };
 
     const handleNewOrder = async (values) => {
         try {
@@ -251,7 +230,8 @@ const OrderManagement = () => {
                 </div>
             </Header>
             <Layout>
-                <Sider theme="light" width={200}>
+                {/* ★ 모바일 메뉴 자동 숨김 (breakpoint) */}
+                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
                     <Menu mode="inline" defaultSelectedKeys={['2']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
@@ -259,7 +239,6 @@ const OrderManagement = () => {
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        {/* ★ 입고 관리 추가 */}
                         <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
                         <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
@@ -269,7 +248,7 @@ const OrderManagement = () => {
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Space wrap>
                                 <RangePicker onChange={(dates) => setDateRange(dates)} value={dateRange} />
-                                <Input placeholder="주문번호, 송장번호, 고객사 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
+                                <Input placeholder="주문번호, 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
                                 <Radio.Group value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} buttonStyle="solid">
                                     <Radio.Button value="all">전체</Radio.Button>
                                     <Radio.Button value="처리대기">처리대기</Radio.Button>
@@ -287,45 +266,31 @@ const OrderManagement = () => {
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
                         </div>
-                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} />
+                        
+                        {/* ★ 모바일 가로 스크롤 (scroll={{ x: 'max-content' }}) */}
+                        <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
             </Layout>
             
-            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
+            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
-                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}>
-                        <Input disabled={!isAdmin} /> 
-                    </Form.Item>
-                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}>
-                        <Input placeholder="예: ORDER-001" /> 
-                    </Form.Item>
-                    <Form.Item name="barcode" label="바코드 (스캔 또는 입력 후 엔터)" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
-                        <Search placeholder="바코드를 입력하고 엔터를 누르세요" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
-                    </Form.Item>
-                    <Form.Item name="product" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
-                        <Input placeholder="바코드 조회 시 자동 입력됨" /> 
-                    </Form.Item>
-                    <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="tracking_number" label="송장번호 (선택)">
-                        <Input placeholder="미입력 시 공란" /> 
-                    </Form.Item>
-                    <Form.Item> <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button> </Form.Item>
+                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
+                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}><Input placeholder="예: ORDER-001" /></Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}><Input /></Form.Item>
+                    <Form.Item name="product" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}><Input /></Form.Item>
+                    <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
+                    <Form.Item name="tracking_number" label="송장번호 (선택)"><Input placeholder="미입력 시 공란" /></Form.Item>
+                    <Form.Item><Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button></Form.Item>
                 </Form>
             </Modal>
 
-            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null}>
+            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <p>주문번호: <b>{selectedOrderNumber}</b></p>
                 <p style={{marginBottom: 20, color: 'gray'}}>송장번호를 입력하면 해당 주문의 모든 상품이 '출고완료' 처리됩니다.</p>
                 <Form form={trackingForm} onFinish={handleShipOrder} layout="vertical">
-                    <Form.Item name="tracking_input" label="운송장 번호" rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}>
-                        <Input placeholder="예: 635423123123" size="large" autoFocus />
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 처리</Button>
-                    </Form.Item>
+                    <Form.Item name="tracking_input" label="운송장 번호" rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}><Input placeholder="예: 635423123123" size="large" autoFocus /></Form.Item>
+                    <Form.Item><Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 처리</Button></Form.Item>
                 </Form>
             </Modal>
 
