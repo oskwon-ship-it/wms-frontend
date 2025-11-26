@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, Badge } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, DownOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, DownOutlined, EditOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
 
@@ -11,11 +11,18 @@ const OrderManagement = () => {
     const navigate = useNavigate();
     const [userEmail, setUserEmail] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
-    const [groupedOrders, setGroupedOrders] = useState([]); // ★ 그룹화된 주문 데이터
+    const [groupedOrders, setGroupedOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
+    
+    // ★★★ [추가] 송장번호 입력을 위한 상태
+    const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false);
+    const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
+    const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+
     const [form] = Form.useForm();
+    const [trackingForm] = Form.useForm(); // 송장번호 입력용 폼
     const [customerName, setCustomerName] = useState(''); 
 
     const {
@@ -53,7 +60,6 @@ const OrderManagement = () => {
         fetchOrders();
     };
 
-    // ★★★ [핵심] 데이터를 가져와서 '주문번호'끼리 묶는 함수
     const fetchOrders = async () => {
         let query = supabase
             .from('orders')
@@ -68,10 +74,8 @@ const OrderManagement = () => {
         const { data, error } = await query;
         
         if (!error) {
-            // 데이터 그룹화 로직 (주문번호 기준)
             const groups = {};
             data.forEach(item => {
-                // 주문번호가 없으면(옛날 데이터) ID를 키로 사용하여 개별 표시
                 const key = item.order_number || `no-order-${item.id}`;
                 
                 if (!groups[key]) {
@@ -80,22 +84,19 @@ const OrderManagement = () => {
                         order_number: item.order_number || '-',
                         created_at: item.created_at,
                         customer: item.customer,
-                        status: item.status, // 대표 상태 (첫 번째 아이템 기준)
+                        status: item.status, 
                         tracking_number: item.tracking_number,
-                        total_quantity: 0, // 총 수량 합계용
-                        items: [] // 상세 품목 리스트
+                        total_quantity: 0, 
+                        items: [] 
                     };
                 }
                 groups[key].items.push(item);
                 groups[key].total_quantity += (item.quantity || 1);
                 
-                // 묶음 중 하나라도 '처리대기'면 그룹 전체를 '처리대기'로 표시 (우선순위)
                 if (item.status === '처리대기') {
                     groups[key].status = '처리대기';
                 }
             });
-            
-            // 객체를 배열로 변환하여 상태 저장
             setGroupedOrders(Object.values(groups));
         }
         setLoading(false);
@@ -135,31 +136,42 @@ const OrderManagement = () => {
         }
     };
 
-    // ★★★ [수정됨] '주문번호'를 기준으로 일괄 업데이트
-    const handleUpdateStatusGroup = async (orderNumber, items) => {
-        try {
-            let query = supabase.from('orders').update({ status: '출고완료' });
+    // ★★★ [수정됨] 출고 버튼 클릭 시 팝업 띄우기
+    const openTrackingModal = (orderNumber, items) => {
+        setSelectedOrderNumber(orderNumber);
+        // 주문번호가 없는 데이터들을 위해 ID 목록도 함께 저장
+        setSelectedOrderIds(items.map(i => i.id));
+        trackingForm.resetFields(); // 폼 초기화
+        setIsTrackingModalVisible(true);
+    };
 
-            if (orderNumber && orderNumber !== '-') {
-                // 주문번호가 있으면 그 번호를 가진 모든 주문 업데이트
-                query = query.eq('order_number', orderNumber);
+    // ★★★ [추가됨] 송장번호 입력 후 실제 출고 처리
+    const handleShipOrder = async (values) => {
+        try {
+            let query = supabase.from('orders').update({ 
+                status: '출고완료',
+                tracking_number: values.tracking_input // 입력받은 송장번호 저장
+            });
+
+            if (selectedOrderNumber && selectedOrderNumber !== '-') {
+                // 주문번호가 있으면 해당 주문번호 전체 업데이트
+                query = query.eq('order_number', selectedOrderNumber);
             } else {
-                // 주문번호가 없는 옛날 데이터면 ID들로 업데이트
-                const ids = items.map(i => i.id);
-                query = query.in('id', ids);
+                // 주문번호가 없으면 ID 목록으로 업데이트
+                query = query.in('id', selectedOrderIds);
             }
 
             const { error } = await query;
             if (error) throw error;
             
-            message.success('해당 주문건이 모두 출고 처리되었습니다.');
+            message.success('송장번호 입력 및 출고 처리가 완료되었습니다.');
+            setIsTrackingModalVisible(false);
             fetchOrders();
         } catch (error) {
-            message.error('상태 변경 실패: ' + error.message);
+            message.error('처리 실패: ' + error.message);
         }
     };
 
-    // ★★★ 1. 펼쳤을 때 보이는 '상세 품목 테이블' (자식 테이블)
     const expandedRowRender = (record) => {
         const itemColumns = [
             { title: '상품명', dataIndex: 'product', key: 'product' },
@@ -175,28 +187,41 @@ const OrderManagement = () => {
         return <Table columns={itemColumns} dataSource={record.items} pagination={false} size="small" />;
     };
 
-    // ★★★ 2. 메인 테이블 컬럼 (부모 테이블)
     const parentColumns = [
         { title: '주문 시간', dataIndex: 'created_at', key: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
         { title: '주문번호', dataIndex: 'order_number', key: 'order_number', render: (text) => <b>{text}</b> }, 
         { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '총 품목 수', key: 'item_count', render: (_, record) => `${record.items.length}종 (${record.total_quantity}개)` },
-        { title: '송장번호', dataIndex: 'tracking_number', key: 'tracking_number' },
+        { title: '송장번호', dataIndex: 'tracking_number', key: 'tracking_number', render: (text) => text || <span style={{color: '#ccc'}}>(미입력)</span> },
         { 
           title: '통합 상태', dataIndex: 'status', key: 'status',
           render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag>
         },
         isAdmin ? {
             title: '관리', key: 'action',
-            render: (_, record) => record.status === '처리대기' && (
-                <Popconfirm 
-                    title="이 주문의 모든 상품을 출고 처리하시겠습니까?" 
-                    onConfirm={() => handleUpdateStatusGroup(record.order_number, record.items)} 
-                    okText="예" 
-                    cancelText="아니오"
-                >
-                    <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />}>일괄 출고</Button>
-                </Popconfirm>
+            render: (_, record) => (
+                // 처리대기 상태면 출고 버튼, 이미 출고완료면 수정 아이콘(선택사항) 표시 가능
+                record.status === '처리대기' ? (
+                    <Button 
+                        size="small" 
+                        type="primary" 
+                        ghost 
+                        icon={<EditOutlined />}
+                        onClick={() => openTrackingModal(record.order_number, record.items)}
+                    >
+                        출고 처리
+                    </Button>
+                ) : (
+                    // 이미 출고된 건도 송장번호 수정하고 싶으면 버튼 활성화 가능
+                    <Button 
+                        size="small" 
+                        type="default" 
+                        icon={<EditOutlined />}
+                        onClick={() => openTrackingModal(record.order_number, record.items)}
+                    >
+                        송장 수정
+                    </Button>
+                )
             )
         } : {}
     ].filter(col => col.title);
@@ -234,19 +259,19 @@ const OrderManagement = () => {
                             </div>
                         </div>
                         
-                        {/* ★★★ 테이블에 expandable 속성 추가 */}
                         <Table 
                             columns={parentColumns} 
                             dataSource={groupedOrders} 
                             rowKey="key" 
                             pagination={{ pageSize: 10 }} 
                             loading={loading}
-                            expandable={{ expandedRowRender }} // 여기가 핵심! (펼치기 기능)
+                            expandable={{ expandedRowRender }}
                         />
                     </div>
                 </Content>
             </Layout>
             
+            {/* 신규 주문 등록 모달 */}
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
@@ -266,6 +291,33 @@ const OrderManagement = () => {
                     <Form.Item> <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button> </Form.Item>
                 </Form>
             </Modal>
+
+            {/* ★★★ [추가됨] 송장번호 입력 및 출고 처리 모달 */}
+            <Modal 
+                title="출고 처리 (송장번호 입력)" 
+                open={isTrackingModalVisible} 
+                onCancel={() => setIsTrackingModalVisible(false)} 
+                footer={null}
+            >
+                <p>주문번호: <b>{selectedOrderNumber}</b></p>
+                <p style={{marginBottom: 20, color: 'gray'}}>송장번호를 입력하면 해당 주문의 모든 상품이 '출고완료' 처리됩니다.</p>
+                
+                <Form form={trackingForm} onFinish={handleShipOrder} layout="vertical">
+                    <Form.Item 
+                        name="tracking_input" 
+                        label="운송장 번호" 
+                        rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}
+                    >
+                        <Input placeholder="예: 635423123123" size="large" autoFocus />
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" block size="large">
+                            입력 완료 및 출고 처리
+                        </Button>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
             <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
         </Layout>
     );
