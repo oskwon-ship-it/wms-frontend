@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, Select, message, Popconfirm, Tag } from 'antd';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber } from 'antd'; // InputNumber 추가
 import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
@@ -22,11 +22,9 @@ const OrderManagement = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // 메뉴 이동 함수
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
-        // if (e.key === '3') navigate('/settings'); // 설정 페이지가 있다면
     };
 
     const checkUser = async () => {
@@ -86,9 +84,12 @@ const OrderManagement = () => {
                 customer: isAdmin ? values.customer_input : customerName, 
                 product: values.product_input,
                 barcode: values.barcode,
+                order_number: values.order_number, 
+                tracking_number: values.tracking_number || null,
+                // ★ [추가] 수량 저장
+                quantity: values.quantity || 1,
                 created_at: new Date(),
                 status: '처리대기',
-                tracking_number: null, 
             };
 
             const { error } = await supabase.from('orders').insert([orderData]);
@@ -116,9 +117,13 @@ const OrderManagement = () => {
 
     const columns = [
         { title: '주문 시간', dataIndex: 'created_at', key: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
+        { title: '주문번호', dataIndex: 'order_number', key: 'order_number' }, 
         { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
         { title: '상품명', dataIndex: 'product', key: 'product' }, 
+        // ★ [추가] 수량 컬럼
+        { title: '수량', dataIndex: 'quantity', key: 'quantity' },
+        { title: '송장번호', dataIndex: 'tracking_number', key: 'tracking_number' },
         { 
           title: '상태', dataIndex: 'status', key: 'status',
           render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status || '처리대기'}</Tag>
@@ -145,7 +150,6 @@ const OrderManagement = () => {
             </Header>
             <Layout>
                 <Sider theme="light" width={200}>
-                    {/* 메뉴 클릭 시 이동하도록 설정 */}
                     <Menu 
                         mode="inline" 
                         defaultSelectedKeys={['2']} 
@@ -172,12 +176,24 @@ const OrderManagement = () => {
             </Layout>
             
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
-                <Form form={form} onFinish={handleNewOrder} layout="vertical">
+                <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
+                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요!' }]}>
+                        <Input placeholder="예: ORDER-001" /> 
+                    </Form.Item>
                     <Form.Item name="barcode" label="바코드" rules={[{ required: true }]}> <Input /> </Form.Item>
                     <Form.Item name="product_input" label="상품명" rules={[{ required: true }]}> <Input /> </Form.Item>
+                    
+                    {/* ★ [추가] 수량 입력 필드 */}
+                    <Form.Item name="quantity" label="수량" rules={[{ required: true }]}>
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                    </Form.Item>
+
+                    <Form.Item name="tracking_number" label="송장번호 (선택)">
+                        <Input placeholder="미입력 시 공란" /> 
+                    </Form.Item>
                     <Form.Item> <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button> </Form.Item>
                 </Form>
             </Modal>
