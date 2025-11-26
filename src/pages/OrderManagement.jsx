@@ -1,24 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd'; // 컴포넌트 추가
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'; // 아이콘 추가
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
+import dayjs from 'dayjs'; // 날짜 비교를 위해 필요 (Antd에 내장됨)
 
 const { Header, Content, Sider } = Layout;
+const { RangePicker } = DatePicker;
 
 const OrderManagement = () => {
     const navigate = useNavigate();
     const [userEmail, setUserEmail] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
-    const [groupedOrders, setGroupedOrders] = useState([]);
+    const [groupedOrders, setGroupedOrders] = useState([]); // 원본 데이터
+    const [filteredOrders, setFilteredOrders] = useState([]); // ★ 필터링된 데이터 (화면 표시용)
     const [loading, setLoading] = useState(true);
+    
+    // 모달 상태
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
-    
     const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false);
+    
+    // 선택된 데이터
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+
+    // ★ 검색 및 필터 상태
+    const [searchText, setSearchText] = useState('');
+    const [dateRange, setDateRange] = useState(null);
+    const [statusFilter, setStatusFilter] = useState('all'); // all, 처리대기, 출고완료
 
     const [form] = Form.useForm();
     const [trackingForm] = Form.useForm(); 
@@ -96,9 +107,53 @@ const OrderManagement = () => {
                     groups[key].status = '처리대기';
                 }
             });
-            setGroupedOrders(Object.values(groups));
+            const processedData = Object.values(groups);
+            setGroupedOrders(processedData);
+            setFilteredOrders(processedData); // 초기엔 전체 표시
         }
         setLoading(false);
+    };
+
+    // ★★★ [핵심] 필터링 로직 (검색어, 날짜, 상태가 바뀔 때마다 실행)
+    useEffect(() => {
+        let result = groupedOrders;
+
+        // 1. 텍스트 검색 (주문번호, 송장번호, 고객사)
+        if (searchText) {
+            const lowerText = searchText.toLowerCase();
+            result = result.filter(item => 
+                (item.order_number && item.order_number.toLowerCase().includes(lowerText)) ||
+                (item.tracking_number && item.tracking_number.toLowerCase().includes(lowerText)) ||
+                (item.customer && item.customer.toLowerCase().includes(lowerText))
+            );
+        }
+
+        // 2. 날짜 범위 필터
+        if (dateRange) {
+            const [start, end] = dateRange;
+            // start는 00:00:00, end는 23:59:59로 설정하여 하루 전체 포함
+            const startDate = start.startOf('day');
+            const endDate = end.endOf('day');
+
+            result = result.filter(item => {
+                const itemDate = dayjs(item.created_at);
+                return itemDate.isAfter(startDate) && itemDate.isBefore(endDate);
+            });
+        }
+
+        // 3. 상태 필터
+        if (statusFilter !== 'all') {
+            result = result.filter(item => item.status === statusFilter);
+        }
+
+        setFilteredOrders(result);
+    }, [searchText, dateRange, statusFilter, groupedOrders]);
+
+    // 필터 초기화 함수
+    const resetFilters = () => {
+        setSearchText('');
+        setDateRange(null);
+        setStatusFilter('all');
     };
 
     useEffect(() => {
@@ -158,7 +213,7 @@ const OrderManagement = () => {
             const { error } = await query;
             if (error) throw error;
             
-            message.success('송장번호 입력 및 출고 처리가 완료되었습니다.');
+            message.success('처리 완료');
             setIsTrackingModalVisible(false);
             fetchOrders();
         } catch (error) {
@@ -183,7 +238,7 @@ const OrderManagement = () => {
             const { error } = await query;
             if (error) throw error;
             
-            message.success('출고가 취소되었습니다. (처리대기 상태로 변경)');
+            message.success('취소 완료');
             fetchOrders();
         } catch (error) {
             message.error('취소 실패: ' + error.message);
@@ -205,7 +260,6 @@ const OrderManagement = () => {
         return <Table columns={itemColumns} dataSource={record.items} pagination={false} size="small" />;
     };
 
-    // ★★★ [핵심 수정] 관리 컬럼 및 버튼 권한 분리
     const parentColumns = [
         { title: '주문 시간', dataIndex: 'created_at', key: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
         { title: '주문번호', dataIndex: 'order_number', key: 'order_number', render: (text) => <b>{text}</b> }, 
@@ -217,11 +271,9 @@ const OrderManagement = () => {
           render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag>
         },
         {
-            title: '관리', key: 'action', width: 200, // ★ isAdmin 조건 제거 (항상 보임)
+            title: '관리', key: 'action', width: 200,
             render: (_, record) => {
-                // 1. 상태가 '처리대기'일 때
                 if (record.status === '처리대기') {
-                    // ★ 관리자에게만 '출고 처리' 버튼 표시
                     return isAdmin && (
                         <Button 
                             size="small" type="primary" ghost icon={<EditOutlined />}
@@ -231,11 +283,8 @@ const OrderManagement = () => {
                         </Button>
                     );
                 }
-
-                // 2. 상태가 '출고완료'일 때
                 return (
                     <div style={{ display: 'flex', gap: '5px' }}>
-                        {/* ★ 관리자에게만 '송장(수정)' 버튼 표시 */}
                         {isAdmin && (
                             <Button 
                                 size="small" type="default" icon={<EditOutlined />}
@@ -244,18 +293,13 @@ const OrderManagement = () => {
                                 송장
                             </Button>
                         )}
-                        
-                        {/* ★ [핵심] 누구나(고객사 포함) '출고 취소' 버튼 표시 */}
                         <Popconfirm
-                            title="출고를 취소하시겠습니까?"
-                            description="상태가 '처리대기'로 변경되고 송장번호가 삭제됩니다."
+                            title="취소하시겠습니까?"
                             onConfirm={() => handleCancelShipment(record.order_number, record.items)}
                             okText="예"
                             cancelText="아니오"
                         >
-                            <Button size="small" danger icon={<UndoOutlined />}>
-                                취소
-                            </Button>
+                            <Button size="small" danger icon={<UndoOutlined />}>취소</Button>
                         </Popconfirm>
                     </div>
                 );
@@ -288,8 +332,40 @@ const OrderManagement = () => {
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
+                        
+                        {/* ★★★ [추가] 검색 및 필터 영역 */}
+                        <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false}>
+                            <Space wrap>
+                                {/* 1. 날짜 필터 */}
+                                <RangePicker 
+                                    onChange={(dates) => setDateRange(dates)} 
+                                    value={dateRange}
+                                    placeholder={['시작일', '종료일']}
+                                />
+                                
+                                {/* 2. 검색창 (주문/송장/고객사) */}
+                                <Input 
+                                    placeholder="주문번호, 송장번호, 고객사 검색" 
+                                    prefix={<SearchOutlined />} 
+                                    value={searchText}
+                                    onChange={(e) => setSearchText(e.target.value)}
+                                    style={{ width: 250 }}
+                                />
+
+                                {/* 3. 상태 필터 */}
+                                <Radio.Group value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} buttonStyle="solid">
+                                    <Radio.Button value="all">전체</Radio.Button>
+                                    <Radio.Button value="처리대기">처리대기</Radio.Button>
+                                    <Radio.Button value="출고완료">출고완료</Radio.Button>
+                                </Radio.Group>
+
+                                {/* 4. 초기화 버튼 */}
+                                <Button icon={<ReloadOutlined />} onClick={resetFilters}>초기화</Button>
+                            </Space>
+                        </Card>
+
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                            <h3>전체 주문 관리 (주문번호 기준)</h3>
+                            <h3>전체 주문 관리 ({filteredOrders.length}건)</h3>
                             <div>
                                 <Button type="primary" onClick={() => setIsModalVisible(true)} icon={<PlusOutlined />} style={{ marginRight: 8 }}>신규 주문 등록</Button>
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
@@ -298,7 +374,7 @@ const OrderManagement = () => {
                         
                         <Table 
                             columns={parentColumns} 
-                            dataSource={groupedOrders} 
+                            dataSource={filteredOrders} // ★★★ 필터링된 데이터 사용
                             rowKey="key" 
                             pagination={{ pageSize: 10 }} 
                             loading={loading}
@@ -328,27 +404,15 @@ const OrderManagement = () => {
                 </Form>
             </Modal>
 
-            <Modal 
-                title="출고 처리 (송장번호 입력)" 
-                open={isTrackingModalVisible} 
-                onCancel={() => setIsTrackingModalVisible(false)} 
-                footer={null}
-            >
+            <Modal title="출고 처리 (송장번호 입력)" open={isTrackingModalVisible} onCancel={() => setIsTrackingModalVisible(false)} footer={null}>
                 <p>주문번호: <b>{selectedOrderNumber}</b></p>
                 <p style={{marginBottom: 20, color: 'gray'}}>송장번호를 입력하면 해당 주문의 모든 상품이 '출고완료' 처리됩니다.</p>
-                
                 <Form form={trackingForm} onFinish={handleShipOrder} layout="vertical">
-                    <Form.Item 
-                        name="tracking_input" 
-                        label="운송장 번호" 
-                        rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}
-                    >
+                    <Form.Item name="tracking_input" label="운송장 번호" rules={[{ required: true, message: '운송장 번호를 입력해주세요!' }]}>
                         <Input placeholder="예: 635423123123" size="large" autoFocus />
                     </Form.Item>
                     <Form.Item>
-                        <Button type="primary" htmlType="submit" block size="large">
-                            입력 완료 및 출고 처리
-                        </Button>
+                        <Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 처리</Button>
                     </Form.Item>
                 </Form>
             </Modal>
