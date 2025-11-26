@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col } from 'antd';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker } from 'antd';
 import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import InventoryUploadModal from '../components/InventoryUploadModal'; 
+import InventoryUploadModal from '../components/InventoryUploadModal';
+import dayjs from 'dayjs'; // 날짜 처리를 위해 필요
 
 const { Header, Content, Sider } = Layout;
 
@@ -62,7 +63,9 @@ const InventoryManagement = () => {
         let query = supabase
             .from('inventory')
             .select('*')
-            .order('product_name', { ascending: true });
+            // 정렬: 상품명 순 -> 유통기한 임박한 순
+            .order('product_name', { ascending: true })
+            .order('expiration_date', { ascending: true, nullsFirst: false });
 
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
@@ -92,6 +95,8 @@ const InventoryManagement = () => {
                 location: values.location,
                 quantity: values.quantity || 0,
                 safe_quantity: values.safe_quantity || 5,
+                // ★ [추가] 유통기한 저장 (날짜 객체 -> 문자열 변환)
+                expiration_date: values.expiration_date ? values.expiration_date.format('YYYY-MM-DD') : null,
                 updated_at: new Date()
             };
 
@@ -104,7 +109,12 @@ const InventoryManagement = () => {
             addForm.resetFields();
             fetchInventory();
         } catch (error) {
-            message.error('등록 실패: ' + error.message);
+            // 중복 에러일 경우 안내 메시지 변경
+            if (error.code === '23505') {
+                message.error('이미 같은 바코드와 유통기한을 가진 상품이 있습니다. 수량을 수정해주세요.');
+            } else {
+                message.error('등록 실패: ' + error.message);
+            }
         }
     };
 
@@ -113,7 +123,9 @@ const InventoryManagement = () => {
         form.setFieldsValue({
             location: record.location,
             safe_quantity: record.safe_quantity,
-            quantity: record.quantity 
+            quantity: record.quantity,
+            // ★ [추가] 유통기한 수정 시 값 세팅
+            expiration_date: record.expiration_date ? dayjs(record.expiration_date) : null
         });
         setIsEditModalVisible(true);
     };
@@ -126,6 +138,8 @@ const InventoryManagement = () => {
                     location: values.location,
                     safe_quantity: values.safe_quantity,
                     quantity: values.quantity, 
+                    // ★ [추가] 유통기한 업데이트
+                    expiration_date: values.expiration_date ? values.expiration_date.format('YYYY-MM-DD') : null,
                     updated_at: new Date()
                 })
                 .eq('id', editingItem.id);
@@ -144,24 +158,34 @@ const InventoryManagement = () => {
         { title: '고객사', dataIndex: 'customer_name', key: 'customer_name' },
         { title: '상품명', dataIndex: 'product_name', key: 'product_name' },
         { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
+        // ★ [추가] 유통기한 컬럼
+        { 
+            title: '유통기한', 
+            dataIndex: 'expiration_date', 
+            key: 'expiration_date',
+            render: (text) => {
+                if (!text) return <span style={{color:'#ccc'}}>-</ span>;
+                // 유통기한 임박 체크 (30일 이내면 빨간색 표시)
+                const isUrgent = dayjs(text).diff(dayjs(), 'day') < 30;
+                return <span style={{ color: isUrgent ? 'red' : 'black', fontWeight: isUrgent ? 'bold' : 'normal' }}>{text}</span>;
+            }
+        },
         { 
             title: '로케이션', 
             dataIndex: 'location', 
-            key: 'location',
             render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span>
         },
         { 
             title: '현재고', 
             dataIndex: 'quantity', 
-            key: 'quantity',
             render: (qty, record) => (
                 <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>
                     {qty} 개
-                    {qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8}}>재고부족</Tag>}
+                    {qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8}}>부족</Tag>}
                 </span>
             )
         },
-        { title: '안전재고', dataIndex: 'safe_quantity', key: 'safe_quantity' },
+        { title: '안전재고', dataIndex: 'safe_quantity' },
         isAdmin ? {
             title: '관리',
             key: 'action',
@@ -251,59 +275,44 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
+            {/* 신규 등록 모달 */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
-                        <Input />
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}> <Input /> </Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true }]}> <Input /> </Form.Item>
+                    
+                    {/* ★ [추가] 유통기한 입력 */}
+                    <Form.Item name="expiration_date" label="유통기한">
+                        <DatePicker style={{ width: '100%' }} placeholder="날짜 선택" />
                     </Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="location" label="로케이션 (위치)">
-                        <Input placeholder="예: A-01-01" />
-                    </Form.Item>
-                    <Form.Item name="quantity" label="초기 재고 수량" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="safe_quantity" label="안전 재고 (알림 기준)" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" block>등록하기</Button>
-                    </Form.Item>
+
+                    <Form.Item name="location" label="로케이션"> <Input placeholder="예: A-01-01" /> </Form.Item>
+                    <Form.Item name="quantity" label="초기 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
+                    <Form.Item name="safe_quantity" label="안전 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
+                    <Form.Item> <Button type="primary" htmlType="submit" block>등록하기</Button> </Form.Item>
                 </Form>
             </Modal>
 
+            {/* 수정 모달 */}
             <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
-                    <Form.Item name="location" label="로케이션 (위치)">
-                        <Input placeholder="예: A-01-02" />
+                    <Form.Item name="expiration_date" label="유통기한">
+                        <DatePicker style={{ width: '100%' }} />
                     </Form.Item>
-                    <Form.Item name="quantity" label="현재 재고 수량 (임의 조정)" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="safe_quantity" label="안전재고 기준" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" block>수정 완료</Button>
-                    </Form.Item>
+                    <Form.Item name="location" label="로케이션"> <Input /> </Form.Item>
+                    <Form.Item name="quantity" label="현재 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
+                    <Form.Item name="safe_quantity" label="안전재고 기준"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
+                    <Form.Item> <Button type="primary" htmlType="submit" block>수정 완료</Button> </Form.Item>
                 </Form>
             </Modal>
 
-            <InventoryUploadModal 
-                isOpen={isExcelModalVisible} 
-                onClose={() => setIsExcelModalVisible(false)} 
-                onUploadSuccess={fetchInventory} 
-                customerName={customerName} 
-            />
+            <InventoryUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchInventory} customerName={customerName} />
         </Layout>
     );
 };
 
-// 👇 이 부분이 핵심입니다! 이 줄이 있어야 화면이 나옵니다.
 export default InventoryManagement;
