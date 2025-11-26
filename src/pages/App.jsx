@@ -2,10 +2,10 @@ import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 
 // 페이지 파일들 불러오기
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import OrderManagement from './pages/OrderManagement';
-import InventoryManagement from './pages/InventoryManagement'; // ★ 1. 이 줄이 꼭 있어야 합니다!
+import Login from './Login';
+import Dashboard from './Dashboard';
+import OrderManagement from './OrderManagement';
+import InventoryManagement from './InventoryManagement'; // ★ 1. 이 줄이 꼭 있어야 합니다!
 
 function App() {
   return (
