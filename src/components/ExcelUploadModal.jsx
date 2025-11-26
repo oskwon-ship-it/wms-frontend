@@ -34,6 +34,13 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
     return false;
   };
 
+  // ★★★ [핵심 기능] 공백 무시하고 값 찾기 함수
+  const getValue = (item, headerName) => {
+    // 엑셀의 모든 키(제목)를 뒤져서 공백을 제거했을 때 일치하는지 확인
+    const foundKey = Object.keys(item).find(key => key.trim() === headerName);
+    return foundKey ? item[foundKey] : null;
+  };
+
   const handleUpload = async () => {
     if (previewData.length === 0) {
       message.error('업로드할 데이터가 없습니다.');
@@ -50,17 +57,23 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
     try {
       const formattedData = previewData.map(item => ({
         customer: customerName, 
-        order_number: item['주문번호'] || null,
-        tracking_number: item['송장번호'] || null,
-        product: item['상품명'] || null, 
-        barcode: item['바코드'] || null, 
         
-        // ★ [추가] 엑셀 '수량' 컬럼 읽어서 매핑 (없으면 1)
-        quantity: item['수량'] || 1,
+        // ★★★ [수정됨] getValue 함수를 사용하여 공백이 있어도 찾아냄
+        order_number: getValue(item, '주문번호'),
+        tracking_number: getValue(item, '송장번호'),
+        product: getValue(item, '상품명'), 
+        barcode: getValue(item, '바코드'), 
+        quantity: getValue(item, '수량') || 1,
         
         created_at: new Date(),
         status: '처리대기', 
       }));
+
+      // 데이터 검증: 필수값이 없는 경우 에러 처리
+      const invalidData = formattedData.find(d => !d.product || !d.barcode);
+      if (invalidData) {
+          throw new Error("상품명 또는 바코드가 비어있는 행이 있습니다. 엑셀 파일을 확인해주세요.");
+      }
 
       const { error } = await supabase.from('orders').insert(formattedData);
 
