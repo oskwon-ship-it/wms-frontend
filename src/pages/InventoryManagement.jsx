@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker } from 'antd';
-// ★ ClockCircleOutlined 아이콘 추가됨
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider } from 'antd';
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
@@ -13,10 +12,17 @@ const InventoryManagement = () => {
     const navigate = useNavigate();
     const [userEmail, setUserEmail] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
-    const [inventory, setInventory] = useState([]);
+    
+    const [inventory, setInventory] = useState([]); // 전체 원본 데이터
+    const [filteredInventory, setFilteredInventory] = useState([]); // 화면에 보여줄 데이터
     const [loading, setLoading] = useState(true);
     const [customerName, setCustomerName] = useState(''); 
     
+    // ★ [추가] 검색 및 설정 상태
+    const [searchText, setSearchText] = useState('');
+    const [alertDays, setAlertDays] = useState(30); // 기본 임박 기준 30일
+    const [showOnlyUrgent, setShowOnlyUrgent] = useState(false); // 임박 상품만 보기
+
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isAddModalVisible, setIsAddModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
@@ -73,8 +79,42 @@ const InventoryManagement = () => {
         }
 
         const { data, error } = await query;
-        if (!error) setInventory(data || []);
+        if (!error) {
+            setInventory(data || []);
+            setFilteredInventory(data || []); // 초기엔 전체 표시
+        }
         setLoading(false);
+    };
+
+    // ★★★ [핵심] 실시간 검색 및 필터링 로직
+    useEffect(() => {
+        let result = inventory;
+
+        // 1. 검색어 필터 (바코드 또는 상품명)
+        if (searchText) {
+            const lowerText = searchText.toLowerCase();
+            result = result.filter(item => 
+                (item.barcode && item.barcode.toLowerCase().includes(lowerText)) ||
+                (item.product_name && item.product_name.toLowerCase().includes(lowerText))
+            );
+        }
+
+        // 2. 유통기한 임박 필터
+        if (showOnlyUrgent) {
+            result = result.filter(item => {
+                if (!item.expiration_date) return false;
+                const daysLeft = dayjs(item.expiration_date).diff(dayjs(), 'day');
+                return daysLeft <= alertDays;
+            });
+        }
+
+        setFilteredInventory(result);
+    }, [searchText, showOnlyUrgent, alertDays, inventory]);
+
+    // 필터 초기화
+    const resetFilters = () => {
+        setSearchText('');
+        setShowOnlyUrgent(false);
     };
 
     useEffect(() => {
@@ -109,7 +149,7 @@ const InventoryManagement = () => {
             fetchInventory();
         } catch (error) {
             if (error.code === '23505') {
-                message.error('이미 같은 바코드와 유통기한을 가진 상품이 있습니다. 수량을 수정해주세요.');
+                message.error('이미 같은 바코드와 유통기한을 가진 상품이 있습니다.');
             } else {
                 message.error('등록 실패: ' + error.message);
             }
@@ -150,6 +190,9 @@ const InventoryManagement = () => {
         }
     };
 
+    // 통계 계산용 (임박 상품 수)
+    const urgentCount = inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= alertDays).length;
+
     const columns = [
         { title: '고객사', dataIndex: 'customer_name', key: 'customer_name' },
         { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
@@ -160,8 +203,16 @@ const InventoryManagement = () => {
             key: 'expiration_date',
             render: (text) => {
                 if (!text) return <span style={{color:'#ccc'}}>-</ span>;
-                const isUrgent = dayjs(text).diff(dayjs(), 'day') < 30;
-                return <span style={{ color: isUrgent ? 'red' : 'black', fontWeight: isUrgent ? 'bold' : 'normal' }}>{text}</span>;
+                // ★ [수정] 설정한 alertDays 기준으로 빨간색 표시
+                const daysLeft = dayjs(text).diff(dayjs(), 'day');
+                const isUrgent = daysLeft <= alertDays;
+                
+                return (
+                    <span style={{ color: isUrgent ? 'red' : 'black', fontWeight: isUrgent ? 'bold' : 'normal' }}>
+                        {text} 
+                        {isUrgent && <Tag color="red" style={{marginLeft: 5}}>D-{daysLeft}</Tag>}
+                    </span>
+                );
             }
         },
         { 
@@ -175,7 +226,7 @@ const InventoryManagement = () => {
             render: (qty, record) => (
                 <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>
                     {qty} 개
-                    {qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8}}>부족</Tag>}
+                    {qty <= record.safe_quantity && <Tag color="orange" style={{marginLeft: 8}}>부족</Tag>}
                 </span>
             )
         },
@@ -218,6 +269,7 @@ const InventoryManagement = () => {
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
+                        {/* 통계 카드 */}
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}>
                                 <Card>
@@ -234,37 +286,66 @@ const InventoryManagement = () => {
                                     />
                                 </Card>
                             </Col>
-                            {/* ★★★ [추가됨] 유통기한 임박 카드 (3번째 칸) */}
                             <Col span={8}>
                                 <Card>
                                     <Statistic 
-                                        title="유통기한 임박 (30일)" 
-                                        // 날짜가 있으면서, 오늘 날짜와의 차이가 30일 이하인 것만 카운트
-                                        value={inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= 30).length} 
-                                        valueStyle={{ color: '#faad14' }} // 주황색 경고
+                                        // ★ [수정] alertDays 변수 연동
+                                        title={`유통기한 임박 (${alertDays}일 이내)`} 
+                                        value={urgentCount} 
+                                        valueStyle={{ color: '#faad14' }} 
                                         prefix={<ClockCircleOutlined />} 
                                     />
                                 </Card>
                             </Col>
                         </Row>
 
+                        {/* ★★★ [추가] 검색 및 설정 바 */}
+                        <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
+                            <Row justify="space-between" align="middle">
+                                <Col>
+                                    <Space>
+                                        <span><b>검색:</b></span>
+                                        <Input 
+                                            placeholder="바코드 또는 상품명 입력" 
+                                            prefix={<SearchOutlined />} 
+                                            value={searchText}
+                                            onChange={(e) => setSearchText(e.target.value)}
+                                            style={{ width: 250 }}
+                                        />
+                                        <Button icon={<ReloadOutlined />} onClick={resetFilters}>초기화</Button>
+                                    </Space>
+                                </Col>
+                                <Col>
+                                    <Space split={<Divider type="vertical" />}>
+                                        <div>
+                                            <span>🚨 알림 기준일: </span>
+                                            <InputNumber 
+                                                min={1} max={365} 
+                                                value={alertDays} 
+                                                onChange={(val) => setAlertDays(val)} 
+                                                style={{ width: 70 }} 
+                                            />
+                                            <span> 일</span>
+                                        </div>
+                                        <Checkbox 
+                                            checked={showOnlyUrgent} 
+                                            onChange={(e) => setShowOnlyUrgent(e.target.checked)}
+                                            style={{color: 'red', fontWeight: 'bold'}}
+                                        >
+                                            임박 상품만 보기
+                                        </Checkbox>
+                                    </Space>
+                                </Col>
+                            </Row>
+                        </Card>
+
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                            <h3>실시간 재고 현황</h3>
+                            <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
                             <div>
-                                <Button 
-                                    type="primary" 
-                                    icon={<PlusOutlined />} 
-                                    onClick={() => setIsAddModalVisible(true)} 
-                                    style={{ marginRight: 8 }}
-                                >
+                                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>
                                     신규 품목 등록
                                 </Button>
-                                <Button 
-                                    type="default" 
-                                    icon={<FileExcelOutlined />}
-                                    onClick={() => setIsExcelModalVisible(true)}
-                                    style={{ borderColor: '#28a745', color: '#28a745' }}
-                                >
+                                <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>
                                     재고 일괄 등록
                                 </Button>
                             </div>
@@ -272,7 +353,7 @@ const InventoryManagement = () => {
                         
                         <Table 
                             columns={columns} 
-                            dataSource={inventory} 
+                            dataSource={filteredInventory} 
                             rowKey="id" 
                             pagination={{ pageSize: 10 }} 
                             loading={loading}
@@ -281,21 +362,15 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
-            {/* 신규 등록 모달 */}
+            {/* 모달 컴포넌트들은 기존과 동일 (생략 없음) */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="expiration_date" label="유통기한">
-                        <DatePicker style={{ width: '100%' }} placeholder="날짜 선택" />
-                    </Form.Item>
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}> <Input /> </Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}> <Input /> </Form.Item>
+                    <Form.Item name="expiration_date" label="유통기한"> <DatePicker style={{ width: '100%' }} placeholder="날짜 선택" /> </Form.Item>
                     <Form.Item name="location" label="로케이션"> <Input placeholder="예: A-01-01" /> </Form.Item>
                     <Form.Item name="quantity" label="초기 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
                     <Form.Item name="safe_quantity" label="안전 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
@@ -303,13 +378,10 @@ const InventoryManagement = () => {
                 </Form>
             </Modal>
 
-            {/* 수정 모달 */}
             <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
-                    <Form.Item name="expiration_date" label="유통기한">
-                        <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
+                    <Form.Item name="expiration_date" label="유통기한"> <DatePicker style={{ width: '100%' }} /> </Form.Item>
                     <Form.Item name="location" label="로케이션"> <Input /> </Form.Item>
                     <Form.Item name="quantity" label="현재 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
                     <Form.Item name="safe_quantity" label="안전재고 기준"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
