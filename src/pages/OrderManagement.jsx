@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd'; // 컴포넌트 추가
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'; // 아이콘 추가
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
-import dayjs from 'dayjs'; // 날짜 비교를 위해 필요 (Antd에 내장됨)
+import dayjs from 'dayjs';
 
 const { Header, Content, Sider } = Layout;
 const { RangePicker } = DatePicker;
@@ -13,23 +13,21 @@ const OrderManagement = () => {
     const navigate = useNavigate();
     const [userEmail, setUserEmail] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
-    const [groupedOrders, setGroupedOrders] = useState([]); // 원본 데이터
-    const [filteredOrders, setFilteredOrders] = useState([]); // ★ 필터링된 데이터 (화면 표시용)
+    const [groupedOrders, setGroupedOrders] = useState([]); 
+    const [filteredOrders, setFilteredOrders] = useState([]); 
     const [loading, setLoading] = useState(true);
     
-    // 모달 상태
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
     const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false);
     
-    // 선택된 데이터
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
 
-    // ★ 검색 및 필터 상태
+    // 검색 및 필터 상태
     const [searchText, setSearchText] = useState('');
     const [dateRange, setDateRange] = useState(null);
-    const [statusFilter, setStatusFilter] = useState('all'); // all, 처리대기, 출고완료
+    const [statusFilter, setStatusFilter] = useState('all');
 
     const [form] = Form.useForm();
     const [trackingForm] = Form.useForm(); 
@@ -109,16 +107,14 @@ const OrderManagement = () => {
             });
             const processedData = Object.values(groups);
             setGroupedOrders(processedData);
-            setFilteredOrders(processedData); // 초기엔 전체 표시
+            setFilteredOrders(processedData);
         }
         setLoading(false);
     };
 
-    // ★★★ [핵심] 필터링 로직 (검색어, 날짜, 상태가 바뀔 때마다 실행)
     useEffect(() => {
         let result = groupedOrders;
 
-        // 1. 텍스트 검색 (주문번호, 송장번호, 고객사)
         if (searchText) {
             const lowerText = searchText.toLowerCase();
             result = result.filter(item => 
@@ -128,10 +124,8 @@ const OrderManagement = () => {
             );
         }
 
-        // 2. 날짜 범위 필터
         if (dateRange) {
             const [start, end] = dateRange;
-            // start는 00:00:00, end는 23:59:59로 설정하여 하루 전체 포함
             const startDate = start.startOf('day');
             const endDate = end.endOf('day');
 
@@ -141,7 +135,6 @@ const OrderManagement = () => {
             });
         }
 
-        // 3. 상태 필터
         if (statusFilter !== 'all') {
             result = result.filter(item => item.status === statusFilter);
         }
@@ -149,7 +142,6 @@ const OrderManagement = () => {
         setFilteredOrders(result);
     }, [searchText, dateRange, statusFilter, groupedOrders]);
 
-    // 필터 초기화 함수
     const resetFilters = () => {
         setSearchText('');
         setDateRange(null);
@@ -333,17 +325,14 @@ const OrderManagement = () => {
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
-                        {/* ★★★ [추가] 검색 및 필터 영역 */}
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false}>
                             <Space wrap>
-                                {/* 1. 날짜 필터 */}
                                 <RangePicker 
                                     onChange={(dates) => setDateRange(dates)} 
                                     value={dateRange}
                                     placeholder={['시작일', '종료일']}
                                 />
                                 
-                                {/* 2. 검색창 (주문/송장/고객사) */}
                                 <Input 
                                     placeholder="주문번호, 송장번호, 고객사 검색" 
                                     prefix={<SearchOutlined />} 
@@ -352,14 +341,12 @@ const OrderManagement = () => {
                                     style={{ width: 250 }}
                                 />
 
-                                {/* 3. 상태 필터 */}
                                 <Radio.Group value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} buttonStyle="solid">
                                     <Radio.Button value="all">전체</Radio.Button>
                                     <Radio.Button value="처리대기">처리대기</Radio.Button>
                                     <Radio.Button value="출고완료">출고완료</Radio.Button>
                                 </Radio.Group>
 
-                                {/* 4. 초기화 버튼 */}
                                 <Button icon={<ReloadOutlined />} onClick={resetFilters}>초기화</Button>
                             </Space>
                         </Card>
@@ -374,7 +361,7 @@ const OrderManagement = () => {
                         
                         <Table 
                             columns={parentColumns} 
-                            dataSource={filteredOrders} // ★★★ 필터링된 데이터 사용
+                            dataSource={filteredOrders} 
                             rowKey="key" 
                             pagination={{ pageSize: 10 }} 
                             loading={loading}
@@ -384,23 +371,69 @@ const OrderManagement = () => {
                 </Content>
             </Layout>
             
-            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
-                <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
-                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
+            {/* ★★★ 폼 수정: 입력 인식 오류 해결 및 한글 메시지 추가 ★★★ */}
+            <Modal 
+                title="신규 주문 등록" 
+                open={isModalVisible} 
+                onCancel={() => setIsModalVisible(false)} 
+                footer={null}
+            >
+                <Form 
+                    form={form} 
+                    onFinish={handleNewOrder} 
+                    layout="vertical" 
+                    initialValues={{ quantity: 1 }}
+                >
+                    <Form.Item 
+                        name="customer_input" 
+                        label="고객사" 
+                        rules={[{ required: true, message: '고객사를 입력해주세요' }]} 
+                        initialValue={!isAdmin ? customerName : ''}
+                    >
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
-                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요!' }]}>
+
+                    <Form.Item 
+                        name="order_number" 
+                        label="주문번호" 
+                        rules={[{ required: true, message: '주문번호를 입력해주세요' }]}
+                    >
                         <Input placeholder="예: ORDER-001" /> 
                     </Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true }]}> <Input /> </Form.Item>
-                    <Form.Item name="product_input" label="상품명" rules={[{ required: true }]}> <Input /> </Form.Item>
-                    <Form.Item name="quantity" label="수량" rules={[{ required: true }]}>
+
+                    <Form.Item 
+                        name="barcode" 
+                        label="바코드" 
+                        rules={[{ required: true, message: '바코드를 입력해주세요' }]}
+                    >
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item 
+                        name="product_input" 
+                        label="상품명" 
+                        rules={[{ required: true, message: '상품명을 입력해주세요' }]}
+                    >
+                        <Input />
+                    </Form.Item>
+
+                    <Form.Item 
+                        name="quantity" 
+                        label="수량" 
+                        rules={[{ required: true, message: '수량을 입력해주세요' }]}
+                    >
                         <InputNumber min={1} style={{ width: '100%' }} />
                     </Form.Item>
+
                     <Form.Item name="tracking_number" label="송장번호 (선택)">
                         <Input placeholder="미입력 시 공란" /> 
                     </Form.Item>
-                    <Form.Item> <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button> </Form.Item>
+
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>
+                            등록
+                        </Button>
+                    </Form.Item>
                 </Form>
             </Modal>
 
