@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card } from 'antd';
-import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
+import TrackingUploadModal from '../components/TrackingUploadModal'; // ★ [추가] 새로 만든 파일 임포트
 import dayjs from 'dayjs';
 
 const { Header, Content, Sider } = Layout;
@@ -17,14 +18,15 @@ const OrderManagement = () => {
     const [filteredOrders, setFilteredOrders] = useState([]); 
     const [loading, setLoading] = useState(true);
     
+    // 모달 상태들
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
-    const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false);
+    const [isTrackingModalVisible, setIsTrackingModalVisible] = useState(false); // 개별 송장 입력용
+    const [isBulkTrackingVisible, setIsBulkTrackingVisible] = useState(false); // ★ [추가] 송장 일괄 등록용
     
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
 
-    // 검색 및 필터 상태
     const [searchText, setSearchText] = useState('');
     const [dateRange, setDateRange] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
@@ -354,6 +356,17 @@ const OrderManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>전체 주문 관리 ({filteredOrders.length}건)</h3>
                             <div>
+                                {/* ★★★ [추가] 관리자 전용 '송장 일괄 등록' 버튼 */}
+                                {isAdmin && (
+                                    <Button 
+                                        type="default" 
+                                        onClick={() => setIsBulkTrackingVisible(true)} 
+                                        style={{ marginRight: 8, borderColor: '#1890ff', color: '#1890ff' }}
+                                        icon={<FileExcelOutlined />}
+                                    >
+                                        송장 일괄 등록
+                                    </Button>
+                                )}
                                 <Button type="primary" onClick={() => setIsModalVisible(true)} icon={<PlusOutlined />} style={{ marginRight: 8 }}>신규 주문 등록</Button>
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
@@ -371,69 +384,23 @@ const OrderManagement = () => {
                 </Content>
             </Layout>
             
-            {/* ★★★ 폼 수정: 입력 인식 오류 해결 및 한글 메시지 추가 ★★★ */}
-            <Modal 
-                title="신규 주문 등록" 
-                open={isModalVisible} 
-                onCancel={() => setIsModalVisible(false)} 
-                footer={null}
-            >
-                <Form 
-                    form={form} 
-                    onFinish={handleNewOrder} 
-                    layout="vertical" 
-                    initialValues={{ quantity: 1 }}
-                >
-                    <Form.Item 
-                        name="customer_input" 
-                        label="고객사" 
-                        rules={[{ required: true, message: '고객사를 입력해주세요' }]} 
-                        initialValue={!isAdmin ? customerName : ''}
-                    >
+            <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
+                <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
+                    <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
-
-                    <Form.Item 
-                        name="order_number" 
-                        label="주문번호" 
-                        rules={[{ required: true, message: '주문번호를 입력해주세요' }]}
-                    >
+                    <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}>
                         <Input placeholder="예: ORDER-001" /> 
                     </Form.Item>
-
-                    <Form.Item 
-                        name="barcode" 
-                        label="바코드" 
-                        rules={[{ required: true, message: '바코드를 입력해주세요' }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item 
-                        name="product_input" 
-                        label="상품명" 
-                        rules={[{ required: true, message: '상품명을 입력해주세요' }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item 
-                        name="quantity" 
-                        label="수량" 
-                        rules={[{ required: true, message: '수량을 입력해주세요' }]}
-                    >
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}> <Input /> </Form.Item>
+                    <Form.Item name="product_input" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}> <Input /> </Form.Item>
+                    <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}>
                         <InputNumber min={1} style={{ width: '100%' }} />
                     </Form.Item>
-
                     <Form.Item name="tracking_number" label="송장번호 (선택)">
                         <Input placeholder="미입력 시 공란" /> 
                     </Form.Item>
-
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>
-                            등록
-                        </Button>
-                    </Form.Item>
+                    <Form.Item> <Button type="primary" htmlType="submit" style={{ marginTop: 20 }} block>등록</Button> </Form.Item>
                 </Form>
             </Modal>
 
@@ -451,6 +418,15 @@ const OrderManagement = () => {
             </Modal>
 
             <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
+            
+            {/* ★★★ [추가] 송장 일괄 등록 모달 연결 */}
+            {isAdmin && (
+                <TrackingUploadModal 
+                    isOpen={isBulkTrackingVisible} 
+                    onClose={() => setIsBulkTrackingVisible(false)} 
+                    onUploadSuccess={fetchOrders} 
+                />
+            )}
         </Layout>
     );
 };
