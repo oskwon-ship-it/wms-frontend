@@ -26,6 +26,8 @@ const OrderManagement = () => {
     
     const [selectedOrderNumber, setSelectedOrderNumber] = useState(null);
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+    // ★ 출고 처리를 위한 선택된 주문 아이템들 저장
+    const [selectedOrderItems, setSelectedOrderItems] = useState([]); 
 
     const [searchText, setSearchText] = useState('');
     const [dateRange, setDateRange] = useState(null);
@@ -64,6 +66,7 @@ const OrderManagement = () => {
              query = query.eq('customer', nameToFilter); 
         }
         const { data, error } = await query;
+        
         if (!error) {
             const groups = {};
             data.forEach(item => {
@@ -122,6 +125,23 @@ const OrderManagement = () => {
     useEffect(() => { checkUser(); }, [customerName, isAdmin]); 
     const handleLogout = async () => { await supabase.auth.signOut(); navigate('/login'); };
 
+    const handleBarcodeSearch = async (barcode) => {
+        if (!barcode) { message.warning('바코드를 입력해주세요.'); return; }
+        const currentCustomer = isAdmin ? form.getFieldValue('customer_input') : customerName;
+        if (!currentCustomer) { message.error('고객사가 선택되지 않았습니다.'); return; }
+
+        try {
+            const { data, error } = await supabase.from('inventory').select('product_name, quantity').eq('barcode', barcode).eq('customer_name', currentCustomer).single();
+            if (error || !data) {
+                message.error('해당 바코드의 상품을 찾을 수 없습니다.');
+                form.setFieldsValue({ product: '' });
+            } else {
+                form.setFieldsValue({ product: data.product_name });
+                message.success(`상품 확인됨: ${data.product_name} (현재고: ${data.quantity}개)`);
+            }
+        } catch (err) { message.error('검색 중 오류가 발생했습니다.'); }
+    };
+
     const handleNewOrder = async (values) => {
         try {
             const orderData = {
@@ -146,12 +166,103 @@ const OrderManagement = () => {
     const openTrackingModal = (orderNumber, items) => {
         setSelectedOrderNumber(orderNumber);
         setSelectedOrderIds(items.map(i => i.id));
+        setSelectedOrderItems(items); // ★ 아이템 정보 저장 (재고 차감을 위해)
         trackingForm.resetFields(); 
         setIsTrackingModalVisible(true);
     };
 
+    // ★★★ [핵심] 출고 시 재고 차감 및 로그 기록 (선입선출)
+    const processOutboundInventory = async (items) => {
+        for (const orderItem of items) {
+            let remainingQty = orderItem.quantity || 1;
+
+            // 1. 유통기한 빠른 순으로 재고 조회
+            const { data: stocks } = await supabase
+                .from('inventory')
+                .select('*')
+                .eq('barcode', orderItem.barcode)
+                .eq('customer_name', orderItem.customer)
+                .gt('quantity', 0) // 재고가 있는 것만
+                .order('expiration_date', { ascending: true, nullsLast: true });
+
+            if (!stocks || stocks.length === 0) {
+                console.warn(`재고 부족: ${orderItem.product} (${orderItem.barcode})`);
+                continue; // 재고 없으면 스킵 (마이너스 처리 안함)
+            }
+
+            // 2. 순서대로 차감
+            for (const stock of stocks) {
+                if (remainingQty <= 0) break;
+
+                const deductAmount = Math.min(stock.quantity, remainingQty);
+                const newStockQty = stock.quantity - deductAmount;
+
+                // 재고 업데이트
+                await supabase.from('inventory').update({ quantity: newStockQty }).eq('id', stock.id);
+
+                // 로그 기록
+                await supabase.from('inventory_logs').insert([{
+                    inventory_id: stock.id,
+                    customer_name: stock.customer_name,
+                    product_name: stock.product_name,
+                    previous_quantity: stock.quantity,
+                    change_quantity: -deductAmount, // 마이너스 처리
+                    new_quantity: newStockQty,
+                    previous_location: stock.location,
+                    new_location: stock.location,
+                    reason: '출고',
+                    changed_by: userEmail
+                }]);
+
+                remainingQty -= deductAmount;
+            }
+        }
+    };
+
+    // ★★★ [핵심] 출고 취소 시 재고 복구
+    const processCancelInventory = async (items) => {
+        for (const orderItem of items) {
+            // 가장 최근에 입고된(혹은 유통기한 늦은) 재고에 다시 채워넣거나, 
+            // 단순하게 해당 바코드의 첫 번째 재고에 수량을 더해줍니다.
+            const { data: stocks } = await supabase
+                .from('inventory')
+                .select('*')
+                .eq('barcode', orderItem.barcode)
+                .eq('customer_name', orderItem.customer)
+                .order('expiration_date', { ascending: false }) // 유통기한 늦은 순
+                .limit(1);
+
+            if (stocks && stocks.length > 0) {
+                const stock = stocks[0];
+                const addAmount = orderItem.quantity || 1;
+                const newStockQty = stock.quantity + addAmount;
+
+                // 재고 복구
+                await supabase.from('inventory').update({ quantity: newStockQty }).eq('id', stock.id);
+
+                // 로그 기록
+                await supabase.from('inventory_logs').insert([{
+                    inventory_id: stock.id,
+                    customer_name: stock.customer_name,
+                    product_name: stock.product_name,
+                    previous_quantity: stock.quantity,
+                    change_quantity: addAmount,
+                    new_quantity: newStockQty,
+                    previous_location: stock.location,
+                    new_location: stock.location,
+                    reason: '출고 취소',
+                    changed_by: userEmail
+                }]);
+            }
+        }
+    };
+
     const handleShipOrder = async (values) => {
         try {
+            // 1. 재고 차감 로직 실행
+            await processOutboundInventory(selectedOrderItems);
+
+            // 2. 주문 상태 업데이트
             let query = supabase.from('orders').update({ status: '출고완료', tracking_number: values.tracking_input });
             if (selectedOrderNumber && selectedOrderNumber !== '-') {
                 query = query.eq('order_number', selectedOrderNumber);
@@ -160,7 +271,8 @@ const OrderManagement = () => {
             }
             const { error } = await query;
             if (error) throw error;
-            message.success('처리 완료');
+            
+            message.success('출고 처리 완료 (재고 차감됨)');
             setIsTrackingModalVisible(false);
             fetchOrders();
         } catch (error) { message.error('처리 실패: ' + error.message); }
@@ -168,6 +280,10 @@ const OrderManagement = () => {
 
     const handleCancelShipment = async (orderNumber, items) => {
         try {
+            // 1. 재고 복구 로직 실행
+            await processCancelInventory(items);
+
+            // 2. 주문 상태 업데이트
             let query = supabase.from('orders').update({ status: '처리대기', tracking_number: null });
             if (orderNumber && orderNumber !== '-') {
                 query = query.eq('order_number', orderNumber);
@@ -177,7 +293,8 @@ const OrderManagement = () => {
             }
             const { error } = await query;
             if (error) throw error;
-            message.success('취소 완료');
+            
+            message.success('출고 취소 완료 (재고 복구됨)');
             fetchOrders();
         } catch (error) { message.error('취소 실패: ' + error.message); }
     };
@@ -230,8 +347,7 @@ const OrderManagement = () => {
                 </div>
             </Header>
             <Layout>
-                {/* ★ 모바일 메뉴 자동 숨김 (breakpoint) */}
-                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
+                <Sider theme="light" width={200}>
                     <Menu mode="inline" defaultSelectedKeys={['2']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
@@ -248,7 +364,7 @@ const OrderManagement = () => {
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Space wrap>
                                 <RangePicker onChange={(dates) => setDateRange(dates)} value={dateRange} />
-                                <Input placeholder="주문번호, 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
+                                <Input placeholder="주문번호, 송장번호, 고객사 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
                                 <Radio.Group value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} buttonStyle="solid">
                                     <Radio.Button value="all">전체</Radio.Button>
                                     <Radio.Button value="처리대기">처리대기</Radio.Button>
@@ -266,8 +382,6 @@ const OrderManagement = () => {
                                 <Button type="primary" onClick={() => setIsExcelModalVisible(true)} style={{ background: '#52c41a', borderColor: '#52c41a' }}>엑셀로 대량 등록</Button>
                             </div>
                         </div>
-                        
-                        {/* ★ 모바일 가로 스크롤 (scroll={{ x: 'max-content' }}) */}
                         <Table columns={parentColumns} dataSource={filteredOrders} rowKey="key" pagination={{ pageSize: 10 }} loading={loading} expandable={{ expandedRowRender }} scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
@@ -277,7 +391,7 @@ const OrderManagement = () => {
                 <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
                     <Form.Item name="order_number" label="주문번호" rules={[{ required: true, message: '주문번호를 입력해주세요' }]}><Input placeholder="예: ORDER-001" /></Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}><Input /></Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}><Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} /></Form.Item>
                     <Form.Item name="product" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}><Input /></Form.Item>
                     <Form.Item name="quantity" label="수량" rules={[{ required: true, message: '수량을 입력해주세요' }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
                     <Form.Item name="tracking_number" label="송장번호 (선택)"><Input placeholder="미입력 시 공란" /></Form.Item>
