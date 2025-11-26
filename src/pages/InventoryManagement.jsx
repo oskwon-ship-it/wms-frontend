@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import InventoryUploadModal from '../components/InventoryUploadModal'; // ★ 추가됨
 
 const { Header, Content, Sider } = Layout;
 
@@ -14,16 +15,19 @@ const InventoryManagement = () => {
     const [loading, setLoading] = useState(true);
     const [customerName, setCustomerName] = useState(''); 
     
-    // 수정 모달 상태
-    const [isModalVisible, setIsModalVisible] = useState(false);
+    // 모달 상태들
+    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [isAddModalVisible, setIsAddModalVisible] = useState(false); // ★ 신규 등록 모달
+    const [isExcelModalVisible, setIsExcelModalVisible] = useState(false); // ★ 엑셀 등록 모달
+    
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
+    const [addForm] = Form.useForm(); // 신규 등록용 폼
 
     const {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // 메뉴 이동 (재고 관리 메뉴 '3'번 추가됨)
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -61,7 +65,6 @@ const InventoryManagement = () => {
             .select('*')
             .order('product_name', { ascending: true });
 
-        // 관리자가 아니면 본인 재고만 조회
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
              query = query.eq('customer_name', nameToFilter); 
@@ -81,14 +84,41 @@ const InventoryManagement = () => {
         navigate('/login');
     };
 
-    // 정보 수정 (로케이션, 안전재고)
+    // ★ [추가] 신규 품목 등록 함수
+    const handleAddInventory = async (values) => {
+        try {
+            const newItem = {
+                customer_name: isAdmin ? values.customer_name : customerName,
+                product_name: values.product_name,
+                barcode: values.barcode,
+                location: values.location,
+                quantity: values.quantity || 0,
+                safe_quantity: values.safe_quantity || 5,
+                updated_at: new Date()
+            };
+
+            const { error } = await supabase.from('inventory').insert([newItem]);
+
+            if (error) throw error;
+
+            message.success('품목이 등록되었습니다.');
+            setIsAddModalVisible(false);
+            addForm.resetFields();
+            fetchInventory();
+        } catch (error) {
+            message.error('등록 실패: ' + error.message);
+        }
+    };
+
+    // 정보 수정
     const handleEdit = (record) => {
         setEditingItem(record);
         form.setFieldsValue({
             location: record.location,
-            safe_quantity: record.safe_quantity
+            safe_quantity: record.safe_quantity,
+            quantity: record.quantity // 수량 수정도 가능하게 추가
         });
-        setIsModalVisible(true);
+        setIsEditModalVisible(true);
     };
 
     const handleUpdateInventory = async (values) => {
@@ -97,14 +127,16 @@ const InventoryManagement = () => {
                 .from('inventory')
                 .update({
                     location: values.location,
-                    safe_quantity: values.safe_quantity
+                    safe_quantity: values.safe_quantity,
+                    quantity: values.quantity, // 수량 수정 반영
+                    updated_at: new Date()
                 })
                 .eq('id', editingItem.id);
 
             if (error) throw error;
 
             message.success('수정되었습니다.');
-            setIsModalVisible(false);
+            setIsEditModalVisible(false);
             fetchInventory();
         } catch (error) {
             message.error('수정 실패: ' + error.message);
@@ -171,7 +203,6 @@ const InventoryManagement = () => {
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
-                        {/* 상단 통계 요약 */}
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}>
                                 <Card>
@@ -192,7 +223,25 @@ const InventoryManagement = () => {
 
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>실시간 재고 현황</h3>
-                            {/* 추후 입고 등록 버튼 추가 예정 */}
+                            {/* ★ [추가] 등록 버튼들 */}
+                            <div>
+                                <Button 
+                                    type="primary" 
+                                    icon={<PlusOutlined />} 
+                                    onClick={() => setIsAddModalVisible(true)} 
+                                    style={{ marginRight: 8 }}
+                                >
+                                    신규 품목 등록
+                                </Button>
+                                <Button 
+                                    type="default" 
+                                    icon={<FileExcelOutlined />}
+                                    onClick={() => setIsExcelModalVisible(true)}
+                                    style={{ borderColor: '#28a745', color: '#28a745' }}
+                                >
+                                    재고 일괄 등록
+                                </Button>
+                            </div>
                         </div>
                         
                         <Table 
@@ -206,17 +255,42 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
-            {/* 정보 수정 모달 */}
-            <Modal 
-                title="재고 정보 수정" 
-                open={isModalVisible} 
-                onCancel={() => setIsModalVisible(false)} 
-                footer={null}
-            >
+            {/* ★ [추가] 신규 등록 모달 */}
+            <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
+                <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
+                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
+                        <Input disabled={!isAdmin} /> 
+                    </Form.Item>
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="location" label="로케이션 (위치)">
+                        <Input placeholder="예: A-01-01" />
+                    </Form.Item>
+                    <Form.Item name="quantity" label="초기 재고 수량" rules={[{ required: true }]}>
+                        <InputNumber min={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="safe_quantity" label="안전 재고 (알림 기준)" rules={[{ required: true }]}>
+                        <InputNumber min={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" block>등록하기</Button>
+                    </Form.Item>
+                </Form>
+            </Modal>
+
+            {/* 수정 모달 */}
+            <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
                     <Form.Item name="location" label="로케이션 (위치)">
                         <Input placeholder="예: A-01-02" />
+                    </Form.Item>
+                    <Form.Item name="quantity" label="현재 재고 수량 (임의 조정)" rules={[{ required: true }]}>
+                        <InputNumber min={0} style={{ width: '100%' }} />
                     </Form.Item>
                     <Form.Item name="safe_quantity" label="안전재고 기준" rules={[{ required: true }]}>
                         <InputNumber min={0} style={{ width: '100%' }} />
@@ -226,6 +300,14 @@ const InventoryManagement = () => {
                     </Form.Item>
                 </Form>
             </Modal>
+
+            {/* ★ [추가] 엑셀 등록 모달 연결 */}
+            <InventoryUploadModal 
+                isOpen={isExcelModalVisible} 
+                onClose={() => setIsExcelModalVisible(false)} 
+                onUploadSuccess={fetchInventory} 
+                customerName={customerName} 
+            />
         </Layout>
     );
 };
