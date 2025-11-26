@@ -34,9 +34,9 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
     return false;
   };
 
-  // ★★★ [핵심 기능] 공백 무시하고 값 찾기 함수
+  // 공백 제거하고 값 찾는 함수
   const getValue = (item, headerName) => {
-    // 엑셀의 모든 키(제목)를 뒤져서 공백을 제거했을 때 일치하는지 확인
+    if (!item) return null;
     const foundKey = Object.keys(item).find(key => key.trim() === headerName);
     return foundKey ? item[foundKey] : null;
   };
@@ -55,49 +55,54 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
     setUploading(true);
 
     try {
-      const formattedData = previewData.map(item => ({
+      // 1. 데이터 변환
+      let formattedData = previewData.map(item => ({
         customer: customerName, 
-        
-        // ★★★ [수정됨] getValue 함수를 사용하여 공백이 있어도 찾아냄
         order_number: getValue(item, '주문번호'),
         tracking_number: getValue(item, '송장번호'),
         product: getValue(item, '상품명'), 
         barcode: getValue(item, '바코드'), 
         quantity: getValue(item, '수량') || 1,
-        
         created_at: new Date(),
         status: '처리대기', 
       }));
 
-      // 데이터 검증: 필수값이 없는 경우 에러 처리
-      const invalidData = formattedData.find(d => !d.product || !d.barcode);
-      if (invalidData) {
-          throw new Error("상품명 또는 바코드가 비어있는 행이 있습니다. 엑셀 파일을 확인해주세요.");
+      // ★★★ [수정됨] 빈 줄(상품명과 바코드가 둘 다 없는 행)은 자동으로 삭제
+      formattedData = formattedData.filter(d => d.product || d.barcode);
+
+      if (formattedData.length === 0) {
+          throw new Error("유효한 데이터가 없습니다. 엑셀 내용을 확인해주세요.");
       }
 
+      // 2. 유효성 검사 (실수로 하나만 빠뜨린 경우 체크)
+      // 상품명은 있는데 바코드가 없거나, 바코드는 있는데 상품명이 없는 경우 에러
+      const invalidData = formattedData.find(d => !d.product || !d.barcode);
+      
+      if (invalidData) {
+          console.error("문제 데이터:", invalidData);
+          throw new Error(`데이터 오류: 상품명이나 바코드가 빠진 행이 있습니다. (확인용: ${invalidData.product || '상품명없음'} / ${invalidData.barcode || '바코드없음'})`);
+      }
+
+      // 3. DB 전송
       const { error } = await supabase.from('orders').insert(formattedData);
 
       if (error) throw error;
 
-      message.success(`${previewData.length}건 등록 성공!`);
+      message.success(`${formattedData.length}건 등록 성공!`);
       setFileList([]);
       setPreviewData([]);
       onUploadSuccess(); 
       onClose();
     } catch (error) {
       console.error(error);
-      message.error('등록 실패: ' + error.message); 
+      message.error(error.message); // 에러 메시지를 그대로 보여줌
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <Modal
-      title="주문 엑셀 일괄 등록"
-      open={isOpen}
-      onCancel={onClose}
-      width={800}
+    <Modal title="주문 엑셀 일괄 등록" open={isOpen} onCancel={onClose} width={800}
       footer={[
         <Button key="back" onClick={onClose}>취소</Button>,
         <Button key="submit" type="primary" loading={uploading} onClick={handleUpload} disabled={previewData.length === 0}>등록하기</Button>
