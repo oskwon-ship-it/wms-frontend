@@ -1,315 +1,125 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
-import InventoryUploadModal from '../components/InventoryUploadModal'; // ★ 추가됨
+import React, { useState } from 'react';
+import { Modal, Upload, Button, Table, message } from 'antd';
+import { InboxOutlined, FileExcelOutlined } from '@ant-design/icons';
+import * as XLSX from 'xlsx';
+import { supabase } from '../supabaseClient'; 
 
-const { Header, Content, Sider } = Layout;
+const { Dragger } = Upload;
 
-const InventoryManagement = () => {
-    const navigate = useNavigate();
-    const [userEmail, setUserEmail] = useState('');
-    const [isAdmin, setIsAdmin] = useState(false);
-    const [inventory, setInventory] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [customerName, setCustomerName] = useState(''); 
+const InventoryUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) => {
+  const [fileList, setFileList] = useState([]);
+  const [previewData, setPreviewData] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  
+  const handleDownloadTemplate = () => {
+      const headers = ['상품명', '바코드', '로케이션', '재고수량', '안전재고']; 
+      const ws = XLSX.utils.aoa_to_sheet([headers]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "재고_등록_양식");
+      XLSX.writeFile(wb, "WMS_재고_일괄등록_양식.xlsx");
+  };
+
+  const handleFileRead = (file) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      setPreviewData(jsonData);
+    };
+    reader.readAsArrayBuffer(file);
+    return false;
+  };
+
+  const getValue = (item, headerName) => {
+    if (!item) return null;
+    const foundKey = Object.keys(item).find(key => key.trim() === headerName);
+    return foundKey ? item[foundKey] : null;
+  };
+
+  const handleUpload = async () => {
+    if (previewData.length === 0) {
+      message.error('업로드할 데이터가 없습니다.');
+      return;
+    }
     
-    // 모달 상태들
-    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [isAddModalVisible, setIsAddModalVisible] = useState(false); // ★ 신규 등록 모달
-    const [isExcelModalVisible, setIsExcelModalVisible] = useState(false); // ★ 엑셀 등록 모달
-    
-    const [editingItem, setEditingItem] = useState(null);
-    const [form] = Form.useForm();
-    const [addForm] = Form.useForm(); // 신규 등록용 폼
+    if (!customerName) {
+        message.error('로그인된 고객사 정보가 없습니다.');
+        return;
+    }
 
-    const {
-        token: { colorBgContainer, borderRadiusLG },
-    } = theme.useToken();
+    setUploading(true);
 
-    const handleMenuClick = (e) => {
-        if (e.key === '1') navigate('/dashboard');
-        if (e.key === '2') navigate('/orders');
-        if (e.key === '3') navigate('/inventory');
-    };
+    try {
+      const formattedData = previewData.map(item => ({
+        customer_name: customerName,
+        product_name: getValue(item, '상품명'),
+        barcode: String(getValue(item, '바코드')), 
+        location: getValue(item, '로케이션'),
+        quantity: getValue(item, '재고수량') || 0,
+        safe_quantity: getValue(item, '안전재고') || 5,
+        updated_at: new Date()
+      })).filter(item => item.product_name && item.barcode);
 
-    const checkUser = async () => {
-        setLoading(true);
-        const { data: { user } } = await supabase.auth.getUser();
+      // ★★★ [수정됨] onConflict 문자열 내의 공백 제거! ('customer_name,barcode')
+      const { error } = await supabase
+        .from('inventory')
+        .upsert(formattedData, { onConflict: 'customer_name,barcode' });
 
-        if (!user) {
-            navigate('/login');
-            return;
-        }
+      if (error) throw error;
 
-        setUserEmail(user.email);
-        const isAdministrator = user.email === 'kos@cbg.com';
-        setIsAdmin(isAdministrator);
+      message.success(`${formattedData.length}건의 재고가 등록/수정되었습니다.`);
+      setFileList([]);
+      setPreviewData([]);
+      onUploadSuccess(); 
+      onClose();
+    } catch (error) {
+      console.error(error);
+      message.error('등록 실패: ' + error.message); 
+    } finally {
+      setUploading(false);
+    }
+  };
 
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('customer_name')
-            .eq('id', user.id)
-            .single();
+  return (
+    <Modal
+      title="재고 엑셀 일괄 등록"
+      open={isOpen}
+      onCancel={onClose}
+      width={800}
+      footer={[
+        <Button key="back" onClick={onClose}>취소</Button>,
+        <Button key="submit" type="primary" loading={uploading} onClick={handleUpload} disabled={previewData.length === 0}>
+            일괄 등록하기
+        </Button>
+      ]}
+    >
+      <Button onClick={handleDownloadTemplate} style={{ marginBottom: 15 }} icon={<FileExcelOutlined />}>
+          재고 양식 다운로드
+      </Button>
+      
+      <Dragger accept=".xlsx, .xls" beforeUpload={handleFileRead} fileList={fileList} onRemove={() => { setFileList([]); setPreviewData([]); }} maxCount={1}>
+        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+        <p className="ant-upload-text">재고 엑셀 파일을 여기에 놓으세요</p>
+        <p className="ant-upload-hint">상품명, 바코드는 필수입니다. (중복 시 수량이 업데이트됩니다)</p>
+      </Dragger>
 
-        if (profile) {
-            setCustomerName(profile.customer_name);
-        }
-        fetchInventory();
-    };
-
-    const fetchInventory = async () => {
-        let query = supabase
-            .from('inventory')
-            .select('*')
-            .order('product_name', { ascending: true });
-
-        const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
-        if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
-             query = query.eq('customer_name', nameToFilter); 
-        }
-
-        const { data, error } = await query;
-        if (!error) setInventory(data || []);
-        setLoading(false);
-    };
-
-    useEffect(() => {
-        checkUser();
-    }, [customerName, isAdmin]); 
-
-    const handleLogout = async () => {
-        await supabase.auth.signOut();
-        navigate('/login');
-    };
-
-    // ★ [추가] 신규 품목 등록 함수
-    const handleAddInventory = async (values) => {
-        try {
-            const newItem = {
-                customer_name: isAdmin ? values.customer_name : customerName,
-                product_name: values.product_name,
-                barcode: values.barcode,
-                location: values.location,
-                quantity: values.quantity || 0,
-                safe_quantity: values.safe_quantity || 5,
-                updated_at: new Date()
-            };
-
-            const { error } = await supabase.from('inventory').insert([newItem]);
-
-            if (error) throw error;
-
-            message.success('품목이 등록되었습니다.');
-            setIsAddModalVisible(false);
-            addForm.resetFields();
-            fetchInventory();
-        } catch (error) {
-            message.error('등록 실패: ' + error.message);
-        }
-    };
-
-    // 정보 수정
-    const handleEdit = (record) => {
-        setEditingItem(record);
-        form.setFieldsValue({
-            location: record.location,
-            safe_quantity: record.safe_quantity,
-            quantity: record.quantity // 수량 수정도 가능하게 추가
-        });
-        setIsEditModalVisible(true);
-    };
-
-    const handleUpdateInventory = async (values) => {
-        try {
-            const { error } = await supabase
-                .from('inventory')
-                .update({
-                    location: values.location,
-                    safe_quantity: values.safe_quantity,
-                    quantity: values.quantity, // 수량 수정 반영
-                    updated_at: new Date()
-                })
-                .eq('id', editingItem.id);
-
-            if (error) throw error;
-
-            message.success('수정되었습니다.');
-            setIsEditModalVisible(false);
-            fetchInventory();
-        } catch (error) {
-            message.error('수정 실패: ' + error.message);
-        }
-    };
-
-    const columns = [
-        { title: '고객사', dataIndex: 'customer_name', key: 'customer_name' },
-        { title: '상품명', dataIndex: 'product_name', key: 'product_name' },
-        { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
-        { 
-            title: '로케이션', 
-            dataIndex: 'location', 
-            key: 'location',
-            render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span>
-        },
-        { 
-            title: '현재고', 
-            dataIndex: 'quantity', 
-            key: 'quantity',
-            render: (qty, record) => (
-                <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>
-                    {qty} 개
-                    {qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8}}>재고부족</Tag>}
-                </span>
-            )
-        },
-        { title: '안전재고', dataIndex: 'safe_quantity', key: 'safe_quantity' },
-        isAdmin ? {
-            title: '관리',
-            key: 'action',
-            render: (_, record) => (
-                <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-                    수정
-                </Button>
-            )
-        } : {}
-    ].filter(col => col.title);
-
-    return (
-        <Layout style={{ minHeight: '100vh' }}>
-            <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
-                <div style={{ color: '#000', fontWeight: 'bold' }}>3PL WMS</div>
-                <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <UserOutlined style={{ marginRight: 8 }} />
-                    <span style={{ marginRight: 20 }}>{customerName || userEmail}</span>
-                    <Button type="primary" onClick={handleLogout} icon={<LogoutOutlined />}>로그아웃</Button>
-                </div>
-            </Header>
-            <Layout>
-                <Sider theme="light" width={200}>
-                    <Menu 
-                        mode="inline" 
-                        defaultSelectedKeys={['3']} 
-                        style={{ height: '100%', borderRight: 0 }}
-                        onClick={handleMenuClick}
-                    >
-                        <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
-                        <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        <Menu.Item key="3" icon={<ShopOutlined />}>재고 관리</Menu.Item>
-                        <Menu.Item key="4" icon={<SettingOutlined />}>설정</Menu.Item>
-                    </Menu>
-                </Sider>
-                <Content style={{ margin: '16px' }}>
-                    <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        
-                        <Row gutter={16} style={{ marginBottom: 24 }}>
-                            <Col span={8}>
-                                <Card>
-                                    <Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} />
-                                </Card>
-                            </Col>
-                            <Col span={8}>
-                                <Card>
-                                    <Statistic 
-                                        title="재고 부족 품목" 
-                                        value={inventory.filter(i => i.quantity <= i.safe_quantity).length} 
-                                        valueStyle={{ color: '#cf1322' }}
-                                        prefix={<AlertOutlined />} 
-                                    />
-                                </Card>
-                            </Col>
-                        </Row>
-
-                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                            <h3>실시간 재고 현황</h3>
-                            {/* ★ [추가] 등록 버튼들 */}
-                            <div>
-                                <Button 
-                                    type="primary" 
-                                    icon={<PlusOutlined />} 
-                                    onClick={() => setIsAddModalVisible(true)} 
-                                    style={{ marginRight: 8 }}
-                                >
-                                    신규 품목 등록
-                                </Button>
-                                <Button 
-                                    type="default" 
-                                    icon={<FileExcelOutlined />}
-                                    onClick={() => setIsExcelModalVisible(true)}
-                                    style={{ borderColor: '#28a745', color: '#28a745' }}
-                                >
-                                    재고 일괄 등록
-                                </Button>
-                            </div>
-                        </div>
-                        
-                        <Table 
-                            columns={columns} 
-                            dataSource={inventory} 
-                            rowKey="id" 
-                            pagination={{ pageSize: 10 }} 
-                            loading={loading}
-                        />
-                    </div>
-                </Content>
-            </Layout>
-
-            {/* ★ [추가] 신규 등록 모달 */}
-            <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
-                <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
-                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
-                        <Input disabled={!isAdmin} /> 
-                    </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="location" label="로케이션 (위치)">
-                        <Input placeholder="예: A-01-01" />
-                    </Form.Item>
-                    <Form.Item name="quantity" label="초기 재고 수량" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="safe_quantity" label="안전 재고 (알림 기준)" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" block>등록하기</Button>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* 수정 모달 */}
-            <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
-                <p>상품명: <b>{editingItem?.product_name}</b></p>
-                <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
-                    <Form.Item name="location" label="로케이션 (위치)">
-                        <Input placeholder="예: A-01-02" />
-                    </Form.Item>
-                    <Form.Item name="quantity" label="현재 재고 수량 (임의 조정)" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="safe_quantity" label="안전재고 기준" rules={[{ required: true }]}>
-                        <InputNumber min={0} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" block>수정 완료</Button>
-                    </Form.Item>
-                </Form>
-            </Modal>
-
-            {/* ★ [추가] 엑셀 등록 모달 연결 */}
-            <InventoryUploadModal 
-                isOpen={isExcelModalVisible} 
-                onClose={() => setIsExcelModalVisible(false)} 
-                onUploadSuccess={fetchInventory} 
-                customerName={customerName} 
-            />
-        </Layout>
-    );
+      {previewData.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <h4>미리보기 (상위 5개)</h4>
+          <Table 
+            dataSource={previewData.slice(0, 5)} 
+            columns={Object.keys(previewData[0]).map(key => ({ title: key, dataIndex: key }))} 
+            pagination={false} 
+            size="small" 
+            rowKey={(r) => Math.random()} 
+          />
+        </div>
+      )}
+    </Modal>
+  );
 };
 
-export default InventoryManagement;
+export default InventoryUploadModal;
