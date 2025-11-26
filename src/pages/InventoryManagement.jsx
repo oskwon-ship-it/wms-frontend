@@ -5,7 +5,6 @@ import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, 
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
 import dayjs from 'dayjs';
-import * as XLSX from 'xlsx';
 
 const { Header, Content, Sider } = Layout;
 const { Option } = Select;
@@ -28,7 +27,6 @@ const InventoryManagement = () => {
     const [isAddModalVisible, setIsAddModalVisible] = useState(false);
     const [isExcelModalVisible, setIsExcelModalVisible] = useState(false);
     
-    // ★ 이력 모달 관련 상태
     const [isHistoryModalVisible, setIsHistoryModalVisible] = useState(false);
     const [historyData, setHistoryData] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
@@ -45,6 +43,7 @@ const InventoryManagement = () => {
         if (e.key === '2') navigate('/orders');
         if (e.key === '3') navigate('/inventory');
         if (e.key === '4') navigate('/history');
+        if (e.key === '5') navigate('/inbound');
     };
 
     const checkUser = async () => {
@@ -118,8 +117,10 @@ const InventoryManagement = () => {
             '유통기한': item.expiration_date || '-',
             '로케이션': item.location || '-',
             '현재고': item.quantity,
+            '주문대기': item.allocated_quantity,
+            '가용재고': item.available_quantity,
             '안전재고': item.safe_quantity,
-            '상태': item.quantity <= item.safe_quantity ? '부족' : '정상'
+            '상태': item.available_quantity <= item.safe_quantity ? '부족' : '정상'
         }));
 
         const ws = XLSX.utils.json_to_sheet(excelData);
@@ -128,7 +129,6 @@ const InventoryManagement = () => {
         XLSX.writeFile(wb, `재고목록_${dayjs().format('YYYYMMDD')}.xlsx`);
     };
 
-    // ★ 이력 조회 함수
     const fetchHistory = async (inventoryId) => {
         setHistoryLoading(true);
         const { data, error } = await supabase
@@ -141,9 +141,7 @@ const InventoryManagement = () => {
         setHistoryLoading(false);
     };
 
-    // ★ 이력 모달 열기
     const handleShowHistory = (record) => {
-        console.log("이력 버튼 클릭됨:", record); // 디버깅용
         setSelectedItemForHistory(record);
         fetchHistory(record.id);
         setIsHistoryModalVisible(true);
@@ -161,7 +159,6 @@ const InventoryManagement = () => {
                 expiration_date: values.expiration_date ? values.expiration_date.format('YYYY-MM-DD') : null,
                 updated_at: new Date()
             };
-            
             const { data, error } = await supabase.from('inventory').insert([newItem]).select();
             if (error) throw error;
 
@@ -211,9 +208,12 @@ const InventoryManagement = () => {
             const newLoc = values.location;
 
             let finalReason = values.reason;
+            // 자동 감지 로직
             if (changeQty === 0 && prevLoc !== newLoc) {
                 finalReason = '로케이션 이동';
-            } else if (changeQty !== 0 && values.reason === '재고 조정') {
+            } 
+            // 사용자가 직접 '유통기한 변경' 등을 선택했을 경우 그 값 유지
+            else if (changeQty !== 0 && values.reason === '재고 조정') {
                 finalReason = '실사조정'; 
             }
 
@@ -239,7 +239,7 @@ const InventoryManagement = () => {
                 new_quantity: newQty,
                 previous_location: prevLoc,
                 new_location: newLoc,
-                reason: finalReason, 
+                reason: finalReason, // 선택한 사유 저장
                 changed_by: userEmail
             }]);
 
@@ -272,13 +272,22 @@ const InventoryManagement = () => {
             }
         },
         { title: '로케이션', dataIndex: 'location', sorter: (a, b) => (a.location || '').localeCompare(b.location || ''), render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span> },
-        { title: '현재고', dataIndex: 'quantity', sorter: (a, b) => a.quantity - b.quantity, render: (qty, record) => <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>{qty} 개{qty <= record.safe_quantity && <Tag color="orange" style={{marginLeft: 8}}>부족</Tag>}</span> },
-        { title: '안전재고', dataIndex: 'safe_quantity', sorter: (a, b) => a.safe_quantity - b.safe_quantity },
+        
+        { 
+            title: '현재고', dataIndex: 'quantity', sorter: (a, b) => a.quantity - b.quantity, align: 'center', render: (qty) => <b>{qty}</b>
+        },
+        { 
+            title: '주문대기', dataIndex: 'allocated_quantity', align: 'center', render: (qty) => <span style={{color: qty > 0 ? 'orange' : '#ccc'}}>{qty > 0 ? `-${qty}` : 0}</span>
+        },
+        { 
+            title: '가용재고', dataIndex: 'available_quantity', align: 'center', sorter: (a, b) => a.available_quantity - b.available_quantity, 
+            render: (qty, record) => <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'blue' }}>{qty}{qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8, fontSize: '10px'}}>부족</Tag>}</span>
+        },
+        { title: '안전재고', dataIndex: 'safe_quantity', align: 'center', sorter: (a, b) => a.safe_quantity - b.safe_quantity },
         {
-            title: '관리', key: 'action', width: 180,
+            title: '관리', key: 'action', width: 150,
             render: (_, record) => (
                 <Space>
-                    {/* ★ 이력 버튼 onClick 연결 확인 */}
                     <Button size="small" icon={<HistoryOutlined />} onClick={() => handleShowHistory(record)}>이력</Button>
                     {isAdmin && <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>수정</Button>}
                 </Space>
@@ -298,31 +307,24 @@ const InventoryManagement = () => {
             </Header>
             <Layout>
                 <Sider theme="light" width={200}>
-                    <Menu 
-                        mode="inline" 
-                        defaultSelectedKeys={['3']} 
-                        defaultOpenKeys={['sub1']}
-                        style={{ height: '100%', borderRight: 0 }}
-                        onClick={handleMenuClick}
-                    >
+                    <Menu mode="inline" defaultSelectedKeys={['3']} defaultOpenKeys={['sub1']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        <Menu.Item key="5" icon={<SettingOutlined />}>설정</Menu.Item>
+                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
+                        <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
+                            <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.available_quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
                             <Col span={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
-
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Row justify="space-between" align="middle">
                                 <Col>
@@ -339,46 +341,16 @@ const InventoryManagement = () => {
                                             <InputNumber min={1} max={365} value={alertDays} onChange={(val) => setAlertDays(val)} style={{ width: 70 }} /><span> 일</span>
                                         </div>
                                         <Checkbox checked={showOnlyUrgent} onChange={(e) => setShowOnlyUrgent(e.target.checked)} style={{color: 'red', fontWeight: 'bold'}}>임박 상품만 보기</Checkbox>
+                                        <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginLeft: 8 }}>목록 다운로드</Button>
                                     </Space>
                                 </Col>
                             </Row>
                         </Card>
-
-                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                            <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
-                            <div>
-                                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
-                                <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
-                            </div>
-                        </div>
-                        
                         <Table columns={columns} dataSource={filteredInventory} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} />
                     </div>
                 </Content>
             </Layout>
 
-            {/* ... 모달들 (신규/수정 생략) ... */}
-
-            {/* ★ 이력 조회 모달 */}
-            <Modal title={`재고 수불 이력 (${selectedItemForHistory?.product_name})`} open={isHistoryModalVisible} onCancel={() => setIsHistoryModalVisible(false)} footer={null} width={800}>
-                <Table 
-                    dataSource={historyData} 
-                    rowKey="id"
-                    loading={historyLoading}
-                    pagination={{ pageSize: 5 }}
-                    columns={[
-                        { title: '일시', dataIndex: 'created_at', render: t => new Date(t).toLocaleString() },
-                        { title: '구분', dataIndex: 'reason', render: t => <Tag color="geekblue">{t}</Tag> },
-                        { title: '로케이션 변경', key: 'location', render: (_, r) => (r.previous_location !== r.new_location && r.new_location) ? <span>{r.previous_location || '(없음)'} <SwapRightOutlined /> {r.new_location}</span> : '-' },
-                        { title: '변경전', dataIndex: 'previous_quantity' },
-                        { title: '변동', dataIndex: 'change_quantity', render: (q) => <span style={{color: q > 0 ? 'blue' : 'red'}}>{q > 0 ? `+${q}` : q}</span> },
-                        { title: '변경후', dataIndex: 'new_quantity', render: q => <b>{q}</b> },
-                        { title: '작업자', dataIndex: 'changed_by' },
-                    ]}
-                />
-            </Modal>
-
-            {/* ... 나머지 모달들 ... */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
@@ -399,18 +371,48 @@ const InventoryManagement = () => {
                     <Form.Item name="location" label="로케이션"><Input /></Form.Item>
                     <Form.Item name="quantity" label="현재 재고"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item>
                     <Form.Item name="safe_quantity" label="안전재고 기준"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item>
+                    
+                    {/* ★ [추가됨] 유통기한 변경 옵션 추가 */}
                     <Form.Item name="reason" label="변경 사유" rules={[{ required: true, message: '사유를 선택해주세요' }]}>
                         <Select>
-                            <Option value="입고">입고</Option>
-                            <Option value="출고">출고</Option>
+                            <Option value="재고 조정">재고 조정 (기본)</Option>
+                            <Option value="유통기한 변경">유통기한 변경</Option> {/* ★ 추가 */}
                             <Option value="로케이션 이동">로케이션 이동</Option>
                             <Option value="실사조정">실사 재고 조정</Option>
                             <Option value="파손/분실">파손/분실</Option>
                             <Option value="기타">기타</Option>
                         </Select>
                     </Form.Item>
+                    
                     <Form.Item><Button type="primary" htmlType="submit" block>수정 완료</Button></Form.Item>
                 </Form>
+            </Modal>
+
+            <Modal title={`재고 수불 이력 (${selectedItemForHistory?.product_name})`} open={isHistoryModalVisible} onCancel={() => setIsHistoryModalVisible(false)} footer={null} width={800}>
+                <Table 
+                    dataSource={historyData} 
+                    rowKey="id"
+                    loading={historyLoading}
+                    pagination={{ pageSize: 5 }}
+                    columns={[
+                        { title: '일시', dataIndex: 'created_at', render: t => new Date(t).toLocaleString() },
+                        { 
+                            title: '구분', dataIndex: 'reason', 
+                            render: t => {
+                                let color = 'default';
+                                if(t?.includes('입고')) color = 'green';
+                                else if(t?.includes('출고')) color = 'volcano';
+                                else if(t?.includes('유통기한')) color = 'cyan'; // ★ 유통기한 변경 색상
+                                return <Tag color={color}>{t}</Tag>;
+                            }
+                        },
+                        { title: '로케이션 변경', key: 'location', render: (_, r) => (r.previous_location !== r.new_location && r.new_location) ? <span>{r.previous_location || '(없음)'} <SwapRightOutlined /> {r.new_location}</span> : '-' },
+                        { title: '변경전', dataIndex: 'previous_quantity' },
+                        { title: '변동', dataIndex: 'change_quantity', render: (q) => <span style={{color: q > 0 ? 'blue' : (q < 0 ? 'red' : 'black')}}>{q > 0 ? `+${q}` : q}</span> },
+                        { title: '변경후', dataIndex: 'new_quantity', render: q => <b>{q}</b> },
+                        { title: '작업자', dataIndex: 'changed_by' },
+                    ]}
+                />
             </Modal>
 
             <InventoryUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchInventory} customerName={customerName} />

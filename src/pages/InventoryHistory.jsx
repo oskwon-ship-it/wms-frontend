@@ -101,7 +101,6 @@ const InventoryHistory = () => {
     const getFilteredData = () => {
         let result = logs;
 
-        // 1. 날짜 필터
         if (dateRange) {
             const [start, end] = dateRange;
             const startDate = start.startOf('day');
@@ -112,7 +111,6 @@ const InventoryHistory = () => {
             });
         }
 
-        // 2. 검색어 필터
         if (searchText) {
             const lower = searchText.toLowerCase();
             result = result.filter(item => 
@@ -121,7 +119,6 @@ const InventoryHistory = () => {
             );
         }
 
-        // 3. 구분 필터 (정확히 일치하는 것만 찾음)
         if (reasonFilter !== 'all') {
             result = result.filter(item => item.reason === reasonFilter);
         }
@@ -134,12 +131,12 @@ const InventoryHistory = () => {
         { 
             title: '구분', dataIndex: 'reason', width: 120,
             render: t => {
-                // ★ 구분값에 따라 색상 자동 지정
                 let color = 'default';
-                if (t.includes('입고') || t.includes('신규')) color = 'green';
-                else if (t.includes('출고') || t.includes('파손')) color = 'volcano';
-                else if (t.includes('이동')) color = 'blue';
-                else if (t.includes('조정')) color = 'orange';
+                if (t?.includes('입고') || t?.includes('신규')) color = 'green';
+                else if (t?.includes('출고') || t?.includes('파손')) color = 'volcano';
+                else if (t?.includes('이동')) color = 'blue';
+                else if (t?.includes('조정')) color = 'orange';
+                else if (t?.includes('유통기한')) color = 'cyan'; // ★ 유통기한 변경 색상 추가
                 
                 return <Tag color={color}>{t}</Tag>;
             }
@@ -208,12 +205,11 @@ const InventoryHistory = () => {
                             <h2>📦 재고 수불 이력 (전체)</h2>
                         </div>
 
-                        {/* 검색 및 필터 영역 */}
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Space wrap>
                                 <RangePicker onChange={(dates) => setDateRange(dates)} placeholder={['시작일', '종료일']} />
                                 
-                                {/* ★★★ [수정] 모든 구분 항목 추가 완료! */}
+                                {/* ★★★ [수정] 모든 구분 항목 추가 완료 */}
                                 <Select defaultValue="all" style={{ width: 150 }} onChange={setReasonFilter}>
                                     <Option value="all">전체 구분</Option>
                                     <Option value="입고">입고</Option>
@@ -222,6 +218,7 @@ const InventoryHistory = () => {
                                     <Option value="신규 등록">신규 등록</Option>
                                     <Option value="출고">출고</Option>
                                     <Option value="로케이션 이동">로케이션 이동</Option>
+                                    <Option value="유통기한 변경">유통기한 변경</Option> {/* ★ 추가 */}
                                     <Option value="실사조정">실사 재고 조정</Option>
                                     <Option value="파손/분실">파손/분실</Option>
                                     <Option value="재고 조정">재고 조정 (기본)</Option>
