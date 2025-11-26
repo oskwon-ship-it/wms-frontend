@@ -39,7 +39,6 @@ const InventoryManagement = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ★ 메뉴 이동 함수 업데이트
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -123,6 +122,24 @@ const InventoryManagement = () => {
     const handleLogout = async () => {
         await supabase.auth.signOut();
         navigate('/login');
+    };
+
+    const handleDownloadExcel = () => {
+        const excelData = filteredInventory.map(item => ({
+            '고객사': item.customer_name,
+            '상품명': item.product_name,
+            '바코드': item.barcode,
+            '유통기한': item.expiration_date || '-',
+            '로케이션': item.location || '-',
+            '현재고': item.quantity,
+            '안전재고': item.safe_quantity,
+            '상태': item.quantity <= item.safe_quantity ? '부족' : '정상'
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "재고목록");
+        XLSX.writeFile(wb, `재고목록_${dayjs().format('YYYYMMDD')}.xlsx`);
     };
 
     const fetchHistory = async (inventoryId) => {
@@ -244,6 +261,9 @@ const InventoryManagement = () => {
         }
     };
 
+    // ★★★ [이 줄이 빠져서 에러가 났습니다! 다시 추가했습니다.]
+    const urgentCount = inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= alertDays).length;
+
     const columns = [
         { title: '고객사', dataIndex: 'customer_name', key: 'customer_name', sorter: (a, b) => a.customer_name.localeCompare(b.customer_name) },
         { title: '바코드', dataIndex: 'barcode', key: 'barcode', sorter: (a, b) => a.barcode.localeCompare(b.barcode) },
@@ -291,20 +311,16 @@ const InventoryManagement = () => {
                     <Menu 
                         mode="inline" 
                         defaultSelectedKeys={['3']} 
-                        // ★ [수정] 서브 메뉴 기본 열림 설정
                         defaultOpenKeys={['sub1']}
                         style={{ height: '100%', borderRight: 0 }}
                         onClick={handleMenuClick}
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
-                        
-                        {/* ★ [수정] 서브 메뉴 적용 */}
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-
                         <Menu.Item key="5" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
@@ -341,6 +357,7 @@ const InventoryManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
                             <div>
+                                <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginRight: 8 }}>목록 다운로드</Button>
                                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
                                 <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
                             </div>
@@ -351,6 +368,7 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
+            {/* ... 모달들 (생략 없이 그대로 유지) ... */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
