@@ -13,15 +13,14 @@ const InventoryManagement = () => {
     const [userEmail, setUserEmail] = useState('');
     const [isAdmin, setIsAdmin] = useState(false);
     
-    const [inventory, setInventory] = useState([]); // 전체 원본 데이터
-    const [filteredInventory, setFilteredInventory] = useState([]); // 화면에 보여줄 데이터
+    const [inventory, setInventory] = useState([]); 
+    const [filteredInventory, setFilteredInventory] = useState([]); 
     const [loading, setLoading] = useState(true);
     const [customerName, setCustomerName] = useState(''); 
     
-    // ★ [추가] 검색 및 설정 상태
     const [searchText, setSearchText] = useState('');
-    const [alertDays, setAlertDays] = useState(30); // 기본 임박 기준 30일
-    const [showOnlyUrgent, setShowOnlyUrgent] = useState(false); // 임박 상품만 보기
+    const [alertDays, setAlertDays] = useState(180); // 기본값 180일로 변경 (요청화면 반영)
+    const [showOnlyUrgent, setShowOnlyUrgent] = useState(false); 
 
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [isAddModalVisible, setIsAddModalVisible] = useState(false);
@@ -81,16 +80,14 @@ const InventoryManagement = () => {
         const { data, error } = await query;
         if (!error) {
             setInventory(data || []);
-            setFilteredInventory(data || []); // 초기엔 전체 표시
+            setFilteredInventory(data || []);
         }
         setLoading(false);
     };
 
-    // ★★★ [핵심] 실시간 검색 및 필터링 로직
     useEffect(() => {
         let result = inventory;
 
-        // 1. 검색어 필터 (바코드 또는 상품명)
         if (searchText) {
             const lowerText = searchText.toLowerCase();
             result = result.filter(item => 
@@ -99,7 +96,6 @@ const InventoryManagement = () => {
             );
         }
 
-        // 2. 유통기한 임박 필터
         if (showOnlyUrgent) {
             result = result.filter(item => {
                 if (!item.expiration_date) return false;
@@ -111,7 +107,6 @@ const InventoryManagement = () => {
         setFilteredInventory(result);
     }, [searchText, showOnlyUrgent, alertDays, inventory]);
 
-    // 필터 초기화
     const resetFilters = () => {
         setSearchText('');
         setShowOnlyUrgent(false);
@@ -190,20 +185,38 @@ const InventoryManagement = () => {
         }
     };
 
-    // 통계 계산용 (임박 상품 수)
     const urgentCount = inventory.filter(i => i.expiration_date && dayjs(i.expiration_date).diff(dayjs(), 'day') <= alertDays).length;
 
     const columns = [
-        { title: '고객사', dataIndex: 'customer_name', key: 'customer_name' },
-        { title: '바코드', dataIndex: 'barcode', key: 'barcode' },
-        { title: '상품명', dataIndex: 'product_name', key: 'product_name' },
+        { 
+            title: '고객사', 
+            dataIndex: 'customer_name', 
+            key: 'customer_name',
+            sorter: (a, b) => a.customer_name.localeCompare(b.customer_name) // ★ 가나다 정렬
+        },
+        { 
+            title: '바코드', 
+            dataIndex: 'barcode', 
+            key: 'barcode',
+            sorter: (a, b) => a.barcode.localeCompare(b.barcode) // ★ 문자/숫자 정렬
+        },
+        { 
+            title: '상품명', 
+            dataIndex: 'product_name', 
+            key: 'product_name',
+            sorter: (a, b) => a.product_name.localeCompare(b.product_name) // ★ 가나다 정렬
+        },
         { 
             title: '유통기한', 
             dataIndex: 'expiration_date', 
             key: 'expiration_date',
+            sorter: (a, b) => { // ★ 날짜 순 정렬
+                if (!a.expiration_date) return 1;
+                if (!b.expiration_date) return -1;
+                return new Date(a.expiration_date) - new Date(b.expiration_date);
+            },
             render: (text) => {
                 if (!text) return <span style={{color:'#ccc'}}>-</ span>;
-                // ★ [수정] 설정한 alertDays 기준으로 빨간색 표시
                 const daysLeft = dayjs(text).diff(dayjs(), 'day');
                 const isUrgent = daysLeft <= alertDays;
                 
@@ -218,19 +231,25 @@ const InventoryManagement = () => {
         { 
             title: '로케이션', 
             dataIndex: 'location', 
+            sorter: (a, b) => (a.location || '').localeCompare(b.location || ''), // ★ 로케이션 정렬
             render: (text) => text ? <Tag color="blue">{text}</Tag> : <span style={{color:'#ccc'}}>(미지정)</span>
         },
         { 
             title: '현재고', 
             dataIndex: 'quantity', 
+            sorter: (a, b) => a.quantity - b.quantity, // ★ 수량 크기 순 정렬
             render: (qty, record) => (
                 <span style={{ fontWeight: 'bold', color: qty <= record.safe_quantity ? 'red' : 'black' }}>
                     {qty} 개
-                    {qty <= record.safe_quantity && <Tag color="orange" style={{marginLeft: 8}}>부족</Tag>}
+                    {qty <= record.safe_quantity && <Tag color="red" style={{marginLeft: 8}}>부족</Tag>}
                 </span>
             )
         },
-        { title: '안전재고', dataIndex: 'safe_quantity' },
+        { 
+            title: '안전재고', 
+            dataIndex: 'safe_quantity',
+            sorter: (a, b) => a.safe_quantity - b.safe_quantity // ★ 수량 크기 순 정렬
+        },
         isAdmin ? {
             title: '관리',
             key: 'action',
@@ -269,7 +288,6 @@ const InventoryManagement = () => {
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
-                        {/* 통계 카드 */}
                         <Row gutter={16} style={{ marginBottom: 24 }}>
                             <Col span={8}>
                                 <Card>
@@ -289,7 +307,6 @@ const InventoryManagement = () => {
                             <Col span={8}>
                                 <Card>
                                     <Statistic 
-                                        // ★ [수정] alertDays 변수 연동
                                         title={`유통기한 임박 (${alertDays}일 이내)`} 
                                         value={urgentCount} 
                                         valueStyle={{ color: '#faad14' }} 
@@ -299,7 +316,7 @@ const InventoryManagement = () => {
                             </Col>
                         </Row>
 
-                        {/* ★★★ [추가] 검색 및 설정 바 */}
+                        {/* 검색 및 설정 바 */}
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Row justify="space-between" align="middle">
                                 <Col>
@@ -342,10 +359,20 @@ const InventoryManagement = () => {
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
                             <div>
-                                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>
+                                <Button 
+                                    type="primary" 
+                                    icon={<PlusOutlined />} 
+                                    onClick={() => setIsAddModalVisible(true)} 
+                                    style={{ marginRight: 8 }}
+                                >
                                     신규 품목 등록
                                 </Button>
-                                <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>
+                                <Button 
+                                    type="default" 
+                                    icon={<FileExcelOutlined />}
+                                    onClick={() => setIsExcelModalVisible(true)}
+                                    style={{ borderColor: '#28a745', color: '#28a745' }}
+                                >
                                     재고 일괄 등록
                                 </Button>
                             </div>
@@ -362,15 +389,21 @@ const InventoryManagement = () => {
                 </Content>
             </Layout>
 
-            {/* 모달 컴포넌트들은 기존과 동일 (생략 없음) */}
+            {/* 모달들 (신규/수정) */}
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}> <Input /> </Form.Item>
-                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}> <Input /> </Form.Item>
-                    <Form.Item name="expiration_date" label="유통기한"> <DatePicker style={{ width: '100%' }} placeholder="날짜 선택" /> </Form.Item>
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="expiration_date" label="유통기한">
+                        <DatePicker style={{ width: '100%' }} placeholder="날짜 선택" />
+                    </Form.Item>
                     <Form.Item name="location" label="로케이션"> <Input placeholder="예: A-01-01" /> </Form.Item>
                     <Form.Item name="quantity" label="초기 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
                     <Form.Item name="safe_quantity" label="안전 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
@@ -381,7 +414,9 @@ const InventoryManagement = () => {
             <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
-                    <Form.Item name="expiration_date" label="유통기한"> <DatePicker style={{ width: '100%' }} /> </Form.Item>
+                    <Form.Item name="expiration_date" label="유통기한">
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
                     <Form.Item name="location" label="로케이션"> <Input /> </Form.Item>
                     <Form.Item name="quantity" label="현재 재고"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
                     <Form.Item name="safe_quantity" label="안전재고 기준"> <InputNumber min={0} style={{ width: '100%' }} /> </Form.Item>
