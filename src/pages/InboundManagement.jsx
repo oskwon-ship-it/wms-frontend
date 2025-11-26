@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, ImportOutlined, BarcodeOutlined, HistoryOutlined } from '@ant-design/icons';
+// ★★★ [수정] PlusOutlined 아이콘 추가됨!
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, ImportOutlined, BarcodeOutlined, HistoryOutlined, PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
@@ -26,13 +27,12 @@ const InboundManagement = () => {
 
     const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
-    // 메뉴 이동
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
         if (e.key === '3') navigate('/inventory');
         if (e.key === '4') navigate('/history');
-        if (e.key === '5') navigate('/inbound'); // 현재 페이지
+        if (e.key === '5') navigate('/inbound');
     };
 
     const checkUser = async () => {
@@ -132,11 +132,9 @@ const InboundManagement = () => {
                 worker: userEmail
             };
 
-            // 1. 입고 기록
             const { error: inboundError } = await supabase.from('inbound').insert([inboundData]);
             if (inboundError) throw inboundError;
 
-            // 2. 재고 수량 증가 (Upsert)
             let query = supabase.from('inventory')
                 .select('id, quantity')
                 .eq('customer_name', inboundData.customer_name)
@@ -160,7 +158,6 @@ const InboundManagement = () => {
                     updated_at: new Date()
                 }).eq('id', targetId);
 
-                // 3. 로그 기록 (수정)
                 await supabase.from('inventory_logs').insert([{
                     inventory_id: targetId,
                     customer_name: inboundData.customer_name,
@@ -186,7 +183,6 @@ const InboundManagement = () => {
                     updated_at: new Date()
                 }]).select();
 
-                // 3. 로그 기록 (신규)
                 if (newItem) {
                     await supabase.from('inventory_logs').insert([{
                         inventory_id: newItem[0].id,
@@ -303,7 +299,11 @@ const InboundManagement = () => {
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
                     <Form.Item name="barcode" label="바코드 (스캔 후 엔터)" rules={[{ required: true }]}>
-                        <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
+                        <Search 
+                            placeholder="바코드 스캔" 
+                            onSearch={handleBarcodeSearch} 
+                            enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} 
+                        />
                     </Form.Item>
                     <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}>
                         <Input />
