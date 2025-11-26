@@ -18,7 +18,6 @@ const Dashboard = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // 메뉴 이동 함수
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -71,8 +70,20 @@ const Dashboard = () => {
         navigate('/login');
     };
 
+    // ★★★ [추가됨] 주문 건수 계산 함수 (주문번호 기준)
+    const countUniqueOrders = (items) => {
+        const uniqueKeys = new Set();
+        items.forEach(item => {
+            // 주문번호가 있으면 주문번호를 키로, 없으면 ID를 키로 사용 (중복 제거)
+            const key = item.order_number || `no-order-${item.id}`;
+            uniqueKeys.add(key);
+        });
+        return uniqueKeys.size; // 중복 제거된 개수 반환
+    };
+
     const columns = [
         { title: '주문 시간', dataIndex: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
+        { title: '주문번호', dataIndex: 'order_number', render: (text) => <b>{text || '-'}</b> }, // 주문번호 표시 추가
         { title: '고객사', dataIndex: 'customer' },
         { title: '바코드', dataIndex: 'barcode' },
         { title: '상품명', dataIndex: 'product' },
@@ -104,14 +115,38 @@ const Dashboard = () => {
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        {/* 통계 카드 영역 */}
+                        {/* 통계 카드 영역 (수정됨) */}
                         <Row gutter={16} style={{ marginBottom: 20 }}>
-                            <Col span={8}><Card><Statistic title="총 주문 건수" value={orders.length} prefix={<DropboxOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="처리 대기중" value={orders.filter(o => o.status === '처리대기').length} valueStyle={{ color: '#cf1322' }} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="출고 완료" value={orders.filter(o => o.status === '출고완료').length} valueStyle={{ color: '#3f8600' }} prefix={<CarOutlined />} /></Card></Col>
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic 
+                                        title="총 주문 건수" 
+                                        value={countUniqueOrders(orders)} 
+                                        prefix={<DropboxOutlined />} 
+                                    />
+                                </Card>
+                            </Col>
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic 
+                                        title="처리 대기중" 
+                                        value={countUniqueOrders(orders.filter(o => o.status === '처리대기'))} 
+                                        valueStyle={{ color: '#cf1322' }} 
+                                    />
+                                </Card>
+                            </Col>
+                            <Col span={8}>
+                                <Card>
+                                    <Statistic 
+                                        title="출고 완료" 
+                                        value={countUniqueOrders(orders.filter(o => o.status === '출고완료'))} 
+                                        valueStyle={{ color: '#3f8600' }} 
+                                        prefix={<CarOutlined />} 
+                                    />
+                                </Card>
+                            </Col>
                         </Row>
 
-                        {/* 최근 주문 목록 (버튼 없음) */}
                         <h3>최근 들어온 주문 (상위 5건)</h3>
                         <Table columns={columns} dataSource={orders.slice(0, 5)} rowKey="id" pagination={false} loading={loading} />
                     </div>
