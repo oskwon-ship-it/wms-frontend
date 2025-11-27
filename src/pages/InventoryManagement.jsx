@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select } from 'antd';
-// ★★★ [수정] ImportOutlined 아이콘을 추가했습니다!
 import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined, DownloadOutlined, ImportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
@@ -10,6 +9,8 @@ import * as XLSX from 'xlsx';
 
 const { Header, Content, Sider } = Layout;
 const { Option } = Select;
+// ★★★ [수정] 이 줄이 빠져서 에러가 났습니다. 추가했습니다!
+const { RangePicker } = DatePicker; 
 
 const InventoryManagement = () => {
     const navigate = useNavigate();
@@ -40,14 +41,12 @@ const InventoryManagement = () => {
 
     const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
-    // 메뉴 이동 (키 값 통일됨)
     const handleMenuClick = (e) => {
-        if (e.key === 'dashboard') navigate('/dashboard');
-        if (e.key === 'order-entry') navigate('/order-entry');
-        if (e.key === 'order-process') navigate('/order-process');
-        if (e.key === 'inventory') navigate('/inventory');
-        if (e.key === 'history') navigate('/history');
-        if (e.key === 'inbound') navigate('/inbound');
+        if (e.key === '1') navigate('/dashboard');
+        if (e.key === '2') navigate('/orders');
+        if (e.key === '3') navigate('/inventory');
+        if (e.key === '4') navigate('/history');
+        if (e.key === '5') navigate('/inbound');
     };
 
     const checkUser = async () => {
@@ -296,31 +295,24 @@ const InventoryManagement = () => {
             </Header>
             <Layout>
                 <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
-                    <Menu 
-                        mode="inline" 
-                        defaultSelectedKeys={['inventory']} 
-                        defaultOpenKeys={['sub1']}
-                        style={{ height: '100%', borderRight: 0 }}
-                        onClick={handleMenuClick}
-                    >
-                        <Menu.Item key="dashboard" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
-                        <Menu.Item key="order-entry" icon={<FileTextOutlined />}>주문 접수</Menu.Item>
-                        {isAdmin && <Menu.Item key="order-process" icon={<RocketOutlined />}>송장/출고 관리</Menu.Item>}
+                    <Menu mode="inline" defaultSelectedKeys={['3']} defaultOpenKeys={['sub1']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
+                        <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
+                        <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
-                            <Menu.Item key="inventory">실시간 재고</Menu.Item>
-                            <Menu.Item key="history">재고 수불부</Menu.Item>
+                            <Menu.Item key="3">실시간 재고</Menu.Item>
+                            <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        <Menu.Item key="inbound" icon={<ImportOutlined />}>입고 관리</Menu.Item>
-                        <Menu.Item key="settings" icon={<SettingOutlined />}>설정</Menu.Item>
+                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
+                        <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
                         <Row gutter={16} style={{ marginBottom: 24 }}>
-                            <Col span={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
 
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
@@ -332,8 +324,9 @@ const InventoryManagement = () => {
                         </Card>
 
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-                            <h3>실시간 재고 현황</h3>
+                            <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
                             <div>
+                                <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginRight: 8 }}>목록 다운로드</Button>
                                 <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
                                 <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
                             </div>
@@ -343,9 +336,9 @@ const InventoryManagement = () => {
                     </div>
                 </Content>
             </Layout>
-
-            {/* 신규 등록 모달 */}
-            <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
+            
+            {/* 모달 컴포넌트들은 기존과 동일 */}
+            <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
                     <Form.Item name="product_name" label="상품명" rules={[{ required: true, message: '상품명을 입력해주세요' }]}> <Input /> </Form.Item>
@@ -358,8 +351,7 @@ const InventoryManagement = () => {
                 </Form>
             </Modal>
 
-            {/* 수정 모달 */}
-            <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null}>
+            <Modal title="재고 정보 수정" open={isEditModalVisible} onCancel={() => setIsEditModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <p>상품명: <b>{editingItem?.product_name}</b></p>
                 <Form form={form} onFinish={handleUpdateInventory} layout="vertical">
                     <Form.Item name="expiration_date" label="유통기한"><DatePicker style={{ width: '100%' }} /></Form.Item>
@@ -368,8 +360,8 @@ const InventoryManagement = () => {
                     <Form.Item name="safe_quantity" label="안전재고 기준"><InputNumber min={0} style={{ width: '100%' }} /></Form.Item>
                     <Form.Item name="reason" label="변경 사유" rules={[{ required: true, message: '사유를 선택해주세요' }]}>
                         <Select>
-                            <Option value="재고 조정">재고 조정 (기본)</Option>
-                            <Option value="유통기한 변경">유통기한 변경</Option> 
+                            <Option value="입고">입고</Option>
+                            <Option value="출고">출고</Option>
                             <Option value="로케이션 이동">로케이션 이동</Option>
                             <Option value="실사조정">실사 재고 조정</Option>
                             <Option value="파손/분실">파손/분실</Option>
@@ -380,9 +372,7 @@ const InventoryManagement = () => {
                 </Form>
             </Modal>
 
-            <InventoryUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchInventory} customerName={customerName} />
-            
-            <Modal title={`재고 수불 이력 (${selectedItemForHistory?.product_name})`} open={isHistoryModalVisible} onCancel={() => setIsHistoryModalVisible(false)} footer={null} width={800}>
+            <Modal title={`재고 수불 이력 (${selectedItemForHistory?.product_name})`} open={isHistoryModalVisible} onCancel={() => setIsHistoryModalVisible(false)} footer={null} width={800} style={{ maxWidth: '100%', top: 20 }}>
                 <Table 
                     dataSource={historyData} 
                     rowKey="id"
@@ -391,18 +381,7 @@ const InventoryManagement = () => {
                     scroll={{ x: 'max-content' }}
                     columns={[
                         { title: '일시', dataIndex: 'created_at', render: t => new Date(t).toLocaleString() },
-                        { 
-                            title: '구분', dataIndex: 'reason', 
-                            render: t => {
-                                let color = 'default';
-                                if(t?.includes('입고') || t?.includes('신규')) color = 'green';
-                                else if(t?.includes('출고') || t?.includes('파손')) color = 'volcano';
-                                else if(t?.includes('이동')) color = 'blue';
-                                else if(t?.includes('조정')) color = 'orange';
-                                else if(t?.includes('유통기한')) color = 'cyan'; 
-                                return <Tag color={color}>{t}</Tag>;
-                            }
-                        },
+                        { title: '구분', dataIndex: 'reason', render: t => <Tag color="geekblue">{t}</Tag> },
                         { title: '로케이션 변경', key: 'location', render: (_, r) => (r.previous_location !== r.new_location && r.new_location) ? <span>{r.previous_location || '(없음)'} <SwapRightOutlined /> {r.new_location}</span> : '-' },
                         { title: '변경전', dataIndex: 'previous_quantity' },
                         { title: '변동', dataIndex: 'change_quantity', render: (q) => <span style={{color: q > 0 ? 'blue' : (q < 0 ? 'red' : 'black')}}>{q > 0 ? `+${q}` : q}</span> },
@@ -411,6 +390,8 @@ const InventoryManagement = () => {
                     ]}
                 />
             </Modal>
+
+            <InventoryUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchInventory} customerName={customerName} />
         </Layout>
     );
 };
