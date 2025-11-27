@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-// ★★★ [수정됨] Row, Col 추가 완료! (이게 없어서 에러가 났습니다)
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card, Alert, Statistic, Row, Col } from 'antd';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card, Alert, Statistic, Select } from 'antd'; // Select 추가
 import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined, BarcodeOutlined, ImportOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
@@ -11,6 +10,7 @@ import dayjs from 'dayjs';
 const { Header, Content, Sider } = Layout;
 const { RangePicker } = DatePicker;
 const { Search } = Input;
+const { Option } = Select; // Select Option 사용
 
 const OrderManagement = () => {
     const navigate = useNavigate();
@@ -86,6 +86,8 @@ const OrderManagement = () => {
                         customer: item.customer,
                         status: item.status, 
                         tracking_number: item.tracking_number,
+                        // ★ [추가] 배송 방식
+                        shipping_type: item.shipping_type || '택배',
                         total_quantity: 0, 
                         items: [] 
                     };
@@ -203,6 +205,8 @@ const OrderManagement = () => {
                 order_number: values.order_number, 
                 tracking_number: values.tracking_number || null,
                 quantity: values.quantity || 1,
+                // ★ [추가] 배송 방식 저장
+                shipping_type: values.shipping_type,
                 created_at: new Date(),
                 status: '처리대기',
                 target_inventory_id: selectedStock ? selectedStock.id : null 
@@ -229,6 +233,7 @@ const OrderManagement = () => {
         setIsStockSelectVisible(false);
     };
 
+    // ... (openTrackingModal, processOutboundInventory, processCancelInventory, handleShipOrder, handleCancelShipment 생략 - 기존과 동일) ...
     const openTrackingModal = async (orderNumber, items) => {
         setSelectedOrderNumber(orderNumber);
         setSelectedOrderIds(items.map(i => i.id));
@@ -305,6 +310,19 @@ const OrderManagement = () => {
     const parentColumns = [
         { title: '주문 시간', dataIndex: 'created_at', key: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
         { title: '주문번호', dataIndex: 'order_number', key: 'order_number', render: (text) => <b>{text}</b> }, 
+        // ★ [추가] 배송 방식 컬럼 (Tag로 예쁘게 표시)
+        { 
+            title: '배송방식', 
+            dataIndex: 'shipping_type', 
+            key: 'shipping_type', 
+            render: (type) => {
+                let color = 'blue'; // 택배
+                if (type === '퀵서비스') color = 'volcano';
+                if (type === '화물/용차') color = 'purple';
+                if (type === '직접수령') color = 'green';
+                return <Tag color={color}>{type}</Tag>;
+            }
+        },
         { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '총 품목 수', key: 'item_count', render: (_, record) => `${record.items.length}종 (${record.total_quantity}개)` },
         { title: '송장번호', dataIndex: 'tracking_number', key: 'tracking_number', render: (text) => text || <span style={{color: '#ccc'}}>(미입력)</span> },
@@ -329,7 +347,8 @@ const OrderManagement = () => {
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-            <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
+             {/* Header & Sider (기존과 동일) */}
+             <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
                 <div style={{ color: '#000', fontWeight: 'bold' }}>3PL WMS</div>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     <UserOutlined style={{ marginRight: 8 }} />
@@ -379,7 +398,7 @@ const OrderManagement = () => {
             </Layout>
             
             <Modal title="신규 주문 등록" open={isModalVisible} onCancel={() => { setIsModalVisible(false); setStockInfo(null); }} footer={null} style={{ top: 20 }}>
-                <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1 }}>
+                <Form form={form} onFinish={handleNewOrder} layout="vertical" initialValues={{ quantity: 1, shipping_type: '택배' }}>
                     <Form.Item name="customer_input" label="고객사" rules={[{ required: true, message: '고객사를 입력해주세요' }]} initialValue={!isAdmin ? customerName : ''}>
                         <Input disabled={!isAdmin} /> 
                     </Form.Item>
@@ -387,11 +406,20 @@ const OrderManagement = () => {
                         <Input placeholder="예: ORDER-001" /> 
                     </Form.Item>
                     
+                    {/* ★ [추가] 배송 방식 선택 */}
+                    <Form.Item name="shipping_type" label="배송 방식" rules={[{ required: true }]}>
+                        <Radio.Group buttonStyle="solid">
+                            <Radio.Button value="택배">택배</Radio.Button>
+                            <Radio.Button value="퀵서비스">퀵서비스</Radio.Button>
+                            <Radio.Button value="화물/용차">화물/용차</Radio.Button>
+                            <Radio.Button value="직접수령">직접수령</Radio.Button>
+                        </Radio.Group>
+                    </Form.Item>
+
                     <Form.Item name="barcode" label="바코드" rules={[{ required: true, message: '바코드를 입력해주세요' }]}>
                         <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
                     </Form.Item>
 
-                    {/* 재고 정보 표시 영역 */}
                     {stockInfo && (
                         <div style={{ marginBottom: 20 }}>
                             <Alert
@@ -458,6 +486,26 @@ const OrderManagement = () => {
                         <Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 확정</Button>
                     </Form.Item>
                 </Form>
+            </Modal>
+
+            {/* 재고 선택 모달 */}
+            <Modal title="사용할 재고 선택 (피킹 지정)" open={isStockSelectVisible} onCancel={() => setIsStockSelectVisible(false)} footer={null} width={700}>
+                <Table 
+                    dataSource={stockList}
+                    rowKey="id"
+                    pagination={false}
+                    columns={[
+                        { title: '상품명', dataIndex: 'product_name' },
+                        { title: '유통기한', dataIndex: 'expiration_date', render: t => t || '-' },
+                        { title: '로케이션', dataIndex: 'location', render: t => <Tag color="blue">{t}</Tag> },
+                        { title: '현재고', dataIndex: 'quantity', render: q => <b>{q}</b> },
+                        { 
+                            title: '선택', 
+                            key: 'action', 
+                            render: (_, record) => <Button type="primary" size="small" onClick={() => handleSelectStock(record)}>선택</Button>
+                        }
+                    ]}
+                />
             </Modal>
 
             <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Upload, Button, Table, message } from 'antd';
-import { InboxOutlined } from '@ant-design/icons';
+import { InboxOutlined, FileExcelOutlined } from '@ant-design/icons';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient'; 
 
@@ -12,7 +12,8 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
   const [uploading, setUploading] = useState(false);
   
   const handleDownloadTemplate = () => {
-      const headers = ['주문번호', '송장번호', '바코드', '상품명', '수량', '수취인명', '연락처', '배송지 주소']; 
+      // ★ [수정] 양식에 '배송방식' 추가
+      const headers = ['주문번호', '송장번호', '배송방식', '바코드', '상품명', '수량', '수취인명', '연락처', '배송지 주소']; 
       const ws = XLSX.utils.aoa_to_sheet([headers]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "주문_양식");
@@ -34,7 +35,6 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
     return false;
   };
 
-  // 공백 제거하고 값 찾는 함수
   const getValue = (item, headerName) => {
     if (!item) return null;
     const foundKey = Object.keys(item).find(key => key.trim() === headerName);
@@ -55,54 +55,44 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
     setUploading(true);
 
     try {
-      // 1. 데이터 변환
-      let formattedData = previewData.map(item => ({
+      const formattedData = previewData.map(item => ({
         customer: customerName, 
         order_number: getValue(item, '주문번호'),
         tracking_number: getValue(item, '송장번호'),
+        // ★ [추가] 배송 방식 매핑 (없으면 기본값 '택배')
+        shipping_type: getValue(item, '배송방식') || '택배',
+        
         product: getValue(item, '상품명'), 
         barcode: getValue(item, '바코드'), 
         quantity: getValue(item, '수량') || 1,
+        
         created_at: new Date(),
         status: '처리대기', 
       }));
 
-      // ★★★ [수정됨] 빈 줄(상품명과 바코드가 둘 다 없는 행)은 자동으로 삭제
-      formattedData = formattedData.filter(d => d.product || d.barcode);
-
-      if (formattedData.length === 0) {
-          throw new Error("유효한 데이터가 없습니다. 엑셀 내용을 확인해주세요.");
-      }
-
-      // 2. 유효성 검사 (실수로 하나만 빠뜨린 경우 체크)
-      // 상품명은 있는데 바코드가 없거나, 바코드는 있는데 상품명이 없는 경우 에러
-      const invalidData = formattedData.find(d => !d.product || !d.barcode);
-      
-      if (invalidData) {
-          console.error("문제 데이터:", invalidData);
-          throw new Error(`데이터 오류: 상품명이나 바코드가 빠진 행이 있습니다. (확인용: ${invalidData.product || '상품명없음'} / ${invalidData.barcode || '바코드없음'})`);
-      }
-
-      // 3. DB 전송
       const { error } = await supabase.from('orders').insert(formattedData);
 
       if (error) throw error;
 
-      message.success(`${formattedData.length}건 등록 성공!`);
+      message.success(`${previewData.length}건 등록 성공!`);
       setFileList([]);
       setPreviewData([]);
       onUploadSuccess(); 
       onClose();
     } catch (error) {
       console.error(error);
-      message.error(error.message); // 에러 메시지를 그대로 보여줌
+      message.error('등록 실패: ' + error.message); 
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <Modal title="주문 엑셀 일괄 등록" open={isOpen} onCancel={onClose} width={800}
+    <Modal
+      title="주문 엑셀 일괄 등록"
+      open={isOpen}
+      onCancel={onClose}
+      width={900}
       footer={[
         <Button key="back" onClick={onClose}>취소</Button>,
         <Button key="submit" type="primary" loading={uploading} onClick={handleUpload} disabled={previewData.length === 0}>등록하기</Button>
@@ -112,7 +102,7 @@ const ExcelUploadModal = ({ isOpen, onClose, onUploadSuccess, customerName }) =>
       <Dragger accept=".xlsx, .xls" beforeUpload={handleFileRead} fileList={fileList} onRemove={() => { setFileList([]); setPreviewData([]); }} maxCount={1}>
         <p className="ant-upload-drag-icon"><InboxOutlined /></p>
         <p className="ant-upload-text">엑셀 파일을 여기로 드래그하세요</p>
-        <p className="ant-upload-hint">주문번호, 바코드, 상품명, 수량은 필수입니다.</p>
+        <p className="ant-upload-hint">주문번호, 바코드, 상품명, 수량은 필수입니다. (배송방식 미입력 시 '택배'로 저장됩니다)</p>
       </Dragger>
       {previewData.length > 0 && (
         <div style={{ marginTop: 20 }}>
