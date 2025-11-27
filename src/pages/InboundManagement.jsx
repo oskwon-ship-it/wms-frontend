@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space } from 'antd';
+// ★ 아이콘들 모두 포함
 import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, ImportOutlined, BarcodeOutlined, HistoryOutlined, PlusOutlined, CheckCircleOutlined, ZoomInOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -21,7 +22,8 @@ const InboundManagement = () => {
     const [searchText, setSearchText] = useState('');
     const [dateRange, setDateRange] = useState(null);
 
-    const [isModalVisible, setIsModalVisible] = useState(false);
+    // 모달 상태
+    const [isModalVisible, setIsModalVisible] = useState(false); 
     const [isInspectModalVisible, setIsInspectModalVisible] = useState(false); 
     const [inspectItem, setInspectItem] = useState(null); 
 
@@ -101,43 +103,43 @@ const InboundManagement = () => {
     };
 
     const handleBarcodeSearch = async (barcode) => {
-        if (!barcode) return;
+        if (!barcode) { 
+            message.warning('바코드를 입력해주세요.'); 
+            return; 
+        }
+
         const cleanBarcode = barcode.trim();
         const targetCustomer = isAdmin ? form.getFieldValue('customer_name') : customerName;
 
         if (!targetCustomer) {
-            message.error('고객사를 먼저 입력해주세요.');
+            message.error('고객사 정보를 먼저 입력하거나, 잠시 후 다시 시도해주세요.');
             return;
         }
 
         try {
-            const { data: items } = await supabase
+            const { data: item } = await supabase
                 .from('inventory')
-                .select('*')
-                .eq('barcode', cleanBarcode);
+                .select('product_name, quantity, customer_name')
+                .eq('barcode', cleanBarcode)
+                .eq('customer_name', targetCustomer)
+                .maybeSingle(); 
 
-            if (!items || items.length === 0) {
-                message.info('등록되지 않은 상품입니다. (신규 등록)');
-                form.setFieldsValue({ product_name: '', location: '' });
+            if (!item) {
+                message.error('해당 바코드의 상품을 찾을 수 없습니다.');
+                form.setFieldsValue({ product_name: '' });
                 return;
             }
 
-            const myItem = items.find(item => item.customer_name === targetCustomer);
+            form.setFieldsValue({ product_name: item.product_name });
+            message.success(`상품 확인: ${item.product_name} (현재고: ${item.quantity}개)`);
 
-            if (myItem) {
-                form.setFieldsValue({
-                    product_name: myItem.product_name,
-                    location: myItem.location,
-                });
-                message.success(`상품 확인: ${myItem.product_name}`);
-            } else {
-                message.warning(`타 고객사 상품입니다.`);
-            }
         } catch (err) {
+            console.error(err);
             message.error('검색 중 오류가 발생했습니다.');
         }
     };
 
+    // 1. 입고 요청 (재고 증가 X, 오직 inbound 테이블에만 저장)
     const handleInboundRequest = async (values) => {
         try {
             const inboundData = {
@@ -152,18 +154,20 @@ const InboundManagement = () => {
                 status: '입고대기' 
             };
 
-            const { error: inboundError } = await supabase.from('inbound').insert([inboundData]);
-            if (inboundError) throw inboundError;
+            const { error } = await supabase.from('inbound').insert([inboundData]);
+            if (error) throw error;
 
-            message.success('입고 요청이 등록되었습니다.');
+            message.success('입고 요청이 등록되었습니다. 관리자 승인 후 재고에 반영됩니다.');
             setIsModalVisible(false);
             form.resetFields();
             fetchInbounds();
         } catch (error) {
+            console.error(error);
             message.error('요청 실패: ' + error.message);
         }
     };
 
+    // 2. 검수 모달 열기
     const openInspectModal = (record) => {
         setInspectItem(record);
         inspectForm.setFieldsValue({
@@ -176,6 +180,7 @@ const InboundManagement = () => {
         setIsInspectModalVisible(true);
     };
 
+    // 3. 검수 승인 (재고 증가 O)
     const handleInspectConfirm = async (values) => {
         try {
             const finalData = {
@@ -186,8 +191,10 @@ const InboundManagement = () => {
                 worker: userEmail 
             };
 
+            // A. 실제 재고 업데이트 및 로그 기록
             await updateInventoryAndLog(finalData);
 
+            // B. 입고 내역 상태 변경 ('입고대기' -> '입고완료') 및 수정된 정보 저장
             const { error } = await supabase
                 .from('inbound')
                 .update({ 
@@ -200,7 +207,7 @@ const InboundManagement = () => {
 
             if (error) throw error;
 
-            message.success('검수 완료! 재고에 반영되었습니다.');
+            message.success('검수 완료! 재고에 정상 반영되었습니다.');
             setIsInspectModalVisible(false);
             fetchInbounds();
         } catch (error) {
@@ -209,16 +216,10 @@ const InboundManagement = () => {
     };
 
     const updateInventoryAndLog = async (dataItem) => {
-        let query = supabase.from('inventory')
-            .select('id, quantity')
-            .eq('customer_name', dataItem.customer_name)
-            .eq('barcode', dataItem.barcode);
+        let query = supabase.from('inventory').select('id, quantity').eq('customer_name', dataItem.customer_name).eq('barcode', dataItem.barcode);
         
-        if (dataItem.expiration_date) {
-            query = query.eq('expiration_date', dataItem.expiration_date);
-        } else {
-            query = query.is('expiration_date', null);
-        }
+        if (dataItem.expiration_date) query = query.eq('expiration_date', dataItem.expiration_date);
+        else query = query.is('expiration_date', null);
         
         const { data: existItems } = await query;
 
@@ -226,48 +227,19 @@ const InboundManagement = () => {
             const targetId = existItems[0].id;
             const newQty = existItems[0].quantity + dataItem.quantity;
             
-            await supabase.from('inventory').update({ 
-                quantity: newQty,
-                location: dataItem.location, 
-                updated_at: new Date()
-            }).eq('id', targetId);
+            await supabase.from('inventory').update({ quantity: newQty, location: dataItem.location, updated_at: new Date() }).eq('id', targetId);
 
             await supabase.from('inventory_logs').insert([{
-                inventory_id: targetId,
-                customer_name: dataItem.customer_name,
-                product_name: dataItem.product_name,
-                previous_quantity: existItems[0].quantity,
-                change_quantity: dataItem.quantity,
-                new_quantity: newQty,
-                previous_location: null, 
-                new_location: dataItem.location,
-                reason: '입고 승인',
-                changed_by: userEmail
+                inventory_id: targetId, customer_name: dataItem.customer_name, product_name: dataItem.product_name, previous_quantity: existItems[0].quantity, change_quantity: dataItem.quantity, new_quantity: newQty, previous_location: null, new_location: dataItem.location, reason: '입고 승인', changed_by: userEmail
             }]);
         } else {
             const { data: newItem } = await supabase.from('inventory').insert([{
-                customer_name: dataItem.customer_name,
-                product_name: dataItem.product_name,
-                barcode: dataItem.barcode,
-                expiration_date: dataItem.expiration_date,
-                location: dataItem.location,
-                quantity: dataItem.quantity,
-                safe_quantity: 5,
-                updated_at: new Date()
+                customer_name: dataItem.customer_name, product_name: dataItem.product_name, barcode: dataItem.barcode, expiration_date: dataItem.expiration_date, location: dataItem.location, quantity: dataItem.quantity, safe_quantity: 5, updated_at: new Date()
             }]).select();
 
             if (newItem) {
                 await supabase.from('inventory_logs').insert([{
-                    inventory_id: newItem[0].id,
-                    customer_name: dataItem.customer_name,
-                    product_name: dataItem.product_name,
-                    previous_quantity: 0,
-                    change_quantity: dataItem.quantity,
-                    new_quantity: dataItem.quantity,
-                    previous_location: null, 
-                    new_location: dataItem.location,
-                    reason: '입고 승인(신규)',
-                    changed_by: userEmail
+                    inventory_id: newItem[0].id, customer_name: dataItem.customer_name, product_name: dataItem.product_name, previous_quantity: 0, change_quantity: dataItem.quantity, new_quantity: dataItem.quantity, previous_location: null, new_location: dataItem.location, reason: '입고 승인(신규)', changed_by: userEmail
                 }]);
             }
         }
@@ -308,19 +280,12 @@ const InboundManagement = () => {
                 <div style={{ color: '#000', fontWeight: 'bold' }}>3PL WMS</div>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     <UserOutlined style={{ marginRight: 8 }} />
-                    {/* 모바일에서 이메일 안 보이게 css 숨김 처리 가능 */}
                     <span style={{ marginRight: 20 }}>{customerName || userEmail}</span>
                     <Button type="primary" onClick={handleLogout} icon={<LogoutOutlined />}>로그아웃</Button>
                 </div>
             </Header>
             <Layout>
-                {/* ★★★ [수정됨] 모바일에서 메뉴 자동 숨김 기능 추가 */}
-                <Sider 
-                    theme="light" 
-                    width={200}
-                    breakpoint="lg" // 화면이 줄어들면
-                    collapsedWidth="0" // 메뉴가 완전히 사라짐 (햄버거 버튼 생김)
-                >
+                <Sider theme="light" width={200}>
                     <Menu 
                         mode="inline" 
                         defaultSelectedKeys={['5']} 
@@ -341,11 +306,10 @@ const InboundManagement = () => {
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
-                        {/* 모바일에서 카드 배치가 깨지지 않도록 gutter 조정 */}
-                        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                            <Col xs={24} sm={8}><Card><Statistic title="총 입고 건수" value={filteredInbounds.length} prefix={<ImportOutlined />} /></Card></Col>
-                            <Col xs={24} sm={8}><Card><Statistic title="총 입고 수량" value={totalInbound} valueStyle={{ color: '#3f8600' }} prefix={<ShopOutlined />} /></Card></Col>
-                            <Col xs={24} sm={8}><Card><Statistic title="승인 대기중" value={pendingCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
+                        <Row gutter={16} style={{ marginBottom: 24 }}>
+                            <Col span={8}><Card><Statistic title="총 입고 건수" value={filteredInbounds.length} prefix={<ImportOutlined />} /></Card></Col>
+                            <Col span={8}><Card><Statistic title="총 입고 수량" value={totalInbound} valueStyle={{ color: '#3f8600' }} prefix={<ShopOutlined />} /></Card></Col>
+                            <Col span={8}><Card><Statistic title="승인 대기중" value={pendingCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
 
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
@@ -356,7 +320,7 @@ const InboundManagement = () => {
                                     prefix={<SearchOutlined />} 
                                     value={searchText}
                                     onChange={(e) => setSearchText(e.target.value)}
-                                    style={{ width: 200 }} // 모바일 폭 고려
+                                    style={{ width: 250 }}
                                 />
                                 <Button icon={<ReloadOutlined />} onClick={() => { setSearchText(''); setDateRange(null); }}>초기화</Button>
                             </Space>
@@ -369,40 +333,43 @@ const InboundManagement = () => {
                             </Button>
                         </div>
                         
-                        {/* ★★★ [수정됨] 모바일에서 가로 스크롤 생기게 함 */}
-                        <Table 
-                            columns={columns} 
-                            dataSource={filteredInbounds} 
-                            rowKey="id" 
-                            pagination={{ pageSize: 10 }} 
-                            loading={loading}
-                            scroll={{ x: 'max-content' }} // 핵심: 내용이 많으면 가로 스크롤
-                        />
+                        <Table columns={columns} dataSource={filteredInbounds} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} />
                     </div>
                 </Content>
             </Layout>
 
-            {/* 모달: 모바일에서 너무 크지 않도록 width 조정 (style={{ maxWidth: '100%' }}) */}
-            <Modal 
-                title="입고 등록" 
-                open={isModalVisible} 
-                onCancel={() => setIsModalVisible(false)} 
-                footer={null}
-                style={{ top: 20 }} // 모바일에서 위쪽 여백 확보
-            >
+            {/* 입고 등록 모달 */}
+            <Modal title="입고 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
                 <Form form={form} onFinish={handleInboundRequest} layout="vertical" initialValues={{ quantity: 1 }}>
-                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
-                    <Form.Item name="barcode" label="바코드 (스캔 후 엔터)" rules={[{ required: true }]}><Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} /></Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}><Input /></Form.Item>
-                    <Form.Item name="expiration_date" label="유통기한"><DatePicker style={{ width: '100%' }} /></Form.Item>
-                    <Form.Item name="location" label="입고 로케이션"><Input placeholder="예: A-01-01" /></Form.Item>
-                    <Form.Item name="quantity" label="입고 수량" rules={[{ required: true }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
-                    <Form.Item><Button type="primary" htmlType="submit" block size="large">{isAdmin ? '입고 확정 (즉시 반영)' : '입고 요청 (승인 대기)'}</Button></Form.Item>
+                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
+                        <Input disabled={!isAdmin} /> 
+                    </Form.Item>
+                    <Form.Item name="barcode" label="바코드 (스캔 후 엔터)" rules={[{ required: true }]}>
+                        <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
+                    </Form.Item>
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}>
+                        <Input />
+                    </Form.Item>
+                    <Form.Item name="expiration_date" label="유통기한">
+                        <DatePicker style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item name="location" label="입고 로케이션">
+                        <Input placeholder="예: A-01-01" />
+                    </Form.Item>
+                    <Form.Item name="quantity" label="입고 수량" rules={[{ required: true }]}>
+                        <InputNumber min={1} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item>
+                        <Button type="primary" htmlType="submit" block size="large">
+                            {isAdmin ? '입고 요청 (관리자도 대기 후 승인)' : '입고 요청 (승인 대기)'}
+                        </Button>
+                    </Form.Item>
                 </Form>
             </Modal>
 
-            <Modal title="입고 검수 및 승인" open={isInspectModalVisible} onCancel={() => setIsInspectModalVisible(false)} footer={null} style={{ top: 20 }}>
-                <p style={{marginBottom: 20, color: 'gray'}}>실물 확인 후 정확한 수량과 유통기한을 입력해주세요.</p>
+            {/* 검수 모달 */}
+            <Modal title="입고 검수 및 승인" open={isInspectModalVisible} onCancel={() => setIsInspectModalVisible(false)} footer={null}>
+                <p style={{marginBottom: 20, color: 'gray'}}>실물 확인 후 정확한 수량과 유통기한을 입력해주세요. 확인을 누르면 재고에 반영됩니다.</p>
                 <Form form={inspectForm} onFinish={handleInspectConfirm} layout="vertical">
                     <Form.Item name="product_name" label="상품명"><Input disabled /></Form.Item>
                     <Form.Item name="barcode" label="바코드"><Input disabled /></Form.Item>
