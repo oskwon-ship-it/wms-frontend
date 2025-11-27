@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card, Alert, Statistic, Select } from 'antd'; // Select 추가
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card, Alert, Statistic, Tooltip } from 'antd';
 import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined, BarcodeOutlined, ImportOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
@@ -10,7 +10,6 @@ import dayjs from 'dayjs';
 const { Header, Content, Sider } = Layout;
 const { RangePicker } = DatePicker;
 const { Search } = Input;
-const { Option } = Select; // Select Option 사용
 
 const OrderManagement = () => {
     const navigate = useNavigate();
@@ -73,7 +72,6 @@ const OrderManagement = () => {
              query = query.eq('customer', nameToFilter); 
         }
         const { data, error } = await query;
-        
         if (!error) {
             const groups = {};
             data.forEach(item => {
@@ -86,8 +84,6 @@ const OrderManagement = () => {
                         customer: item.customer,
                         status: item.status, 
                         tracking_number: item.tracking_number,
-                        // ★ [추가] 배송 방식
-                        shipping_type: item.shipping_type || '택배',
                         total_quantity: 0, 
                         items: [] 
                     };
@@ -178,7 +174,7 @@ const OrderManagement = () => {
                 available: available
             });
 
-            message.success(`상품 확인: ${productName} (현재고 합계: ${totalPhysical}개)`);
+            message.success(`상품 확인: ${productName}`);
 
         } catch (err) {
             console.error(err);
@@ -205,7 +201,7 @@ const OrderManagement = () => {
                 order_number: values.order_number, 
                 tracking_number: values.tracking_number || null,
                 quantity: values.quantity || 1,
-                // ★ [추가] 배송 방식 저장
+                // ★ [추가] 배송 방식
                 shipping_type: values.shipping_type,
                 created_at: new Date(),
                 status: '처리대기',
@@ -233,7 +229,6 @@ const OrderManagement = () => {
         setIsStockSelectVisible(false);
     };
 
-    // ... (openTrackingModal, processOutboundInventory, processCancelInventory, handleShipOrder, handleCancelShipment 생략 - 기존과 동일) ...
     const openTrackingModal = async (orderNumber, items) => {
         setSelectedOrderNumber(orderNumber);
         setSelectedOrderIds(items.map(i => i.id));
@@ -310,22 +305,13 @@ const OrderManagement = () => {
     const parentColumns = [
         { title: '주문 시간', dataIndex: 'created_at', key: 'created_at', render: (text) => text ? new Date(text).toLocaleString() : '-' },
         { title: '주문번호', dataIndex: 'order_number', key: 'order_number', render: (text) => <b>{text}</b> }, 
-        // ★ [추가] 배송 방식 컬럼 (Tag로 예쁘게 표시)
-        { 
-            title: '배송방식', 
-            dataIndex: 'shipping_type', 
-            key: 'shipping_type', 
-            render: (type) => {
-                let color = 'blue'; // 택배
-                if (type === '퀵서비스') color = 'volcano';
-                if (type === '화물/용차') color = 'purple';
-                if (type === '직접수령') color = 'green';
-                return <Tag color={color}>{type}</Tag>;
-            }
-        },
         { title: '고객사', dataIndex: 'customer', key: 'customer' }, 
         { title: '총 품목 수', key: 'item_count', render: (_, record) => `${record.items.length}종 (${record.total_quantity}개)` },
         { title: '송장번호', dataIndex: 'tracking_number', key: 'tracking_number', render: (text) => text || <span style={{color: '#ccc'}}>(미입력)</span> },
+        { 
+            title: '배송방식', dataIndex: 'shipping_type', key: 'shipping_type', 
+            render: (type) => <Tag color={type === '퀵서비스' ? 'volcano' : 'blue'}>{type || '택배'}</Tag> 
+        },
         { title: '통합 상태', dataIndex: 'status', key: 'status', render: (status) => <Tag color={status === '출고완료' ? 'green' : 'blue'}>{status}</Tag> },
         {
             title: '관리', key: 'action', width: 200,
@@ -347,8 +333,7 @@ const OrderManagement = () => {
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-             {/* Header & Sider (기존과 동일) */}
-             <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
+            <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
                 <div style={{ color: '#000', fontWeight: 'bold' }}>3PL WMS</div>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     <UserOutlined style={{ marginRight: 8 }} />
@@ -406,7 +391,6 @@ const OrderManagement = () => {
                         <Input placeholder="예: ORDER-001" /> 
                     </Form.Item>
                     
-                    {/* ★ [추가] 배송 방식 선택 */}
                     <Form.Item name="shipping_type" label="배송 방식" rules={[{ required: true }]}>
                         <Radio.Group buttonStyle="solid">
                             <Radio.Button value="택배">택배</Radio.Button>
@@ -420,22 +404,26 @@ const OrderManagement = () => {
                         <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
                     </Form.Item>
 
+                    {/* ★★★ [수정] 안전한 div 기반 재고 표시 (Row/Col 제거) */}
                     {stockInfo && (
                         <div style={{ marginBottom: 20 }}>
                             <Alert
                                 message="재고 현황"
                                 description={
-                                    <Row gutter={16} style={{ marginTop: 8 }}>
-                                        <Col span={8}><Statistic title="현재고" value={stockInfo.physical} valueStyle={{ fontSize: 16 }} /></Col>
-                                        <Col span={8}><Statistic title="주문대기" value={stockInfo.allocated} valueStyle={{ fontSize: 16, color: 'orange' }} /></Col>
-                                        <Col span={8}>
-                                            <Statistic 
-                                                title="가용재고" 
-                                                value={stockInfo.available} 
-                                                valueStyle={{ fontSize: 16, color: stockInfo.available > 0 ? 'blue' : 'red' }} 
-                                            />
-                                        </Col>
-                                    </Row>
+                                    <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 10, textAlign: 'center' }}>
+                                        <div>
+                                            <div style={{ fontSize: 12, color: '#666' }}>현재고</div>
+                                            <div style={{ fontSize: 16, fontWeight: 'bold' }}>{stockInfo.physical}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 12, color: '#666' }}>주문대기</div>
+                                            <div style={{ fontSize: 16, fontWeight: 'bold', color: 'orange' }}>{stockInfo.allocated}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 12, color: '#666' }}>가용재고</div>
+                                            <div style={{ fontSize: 16, fontWeight: 'bold', color: stockInfo.available > 0 ? 'blue' : 'red' }}>{stockInfo.available}</div>
+                                        </div>
+                                    </div>
                                 }
                                 type={stockInfo.available > 0 ? "info" : "error"}
                                 showIcon
@@ -458,7 +446,7 @@ const OrderManagement = () => {
                 <p>주문번호: <b>{selectedOrderNumber}</b></p>
                 <p style={{marginBottom: 20, color: 'gray'}}>송장번호를 입력하면 해당 주문의 모든 상품이 '출고완료' 처리됩니다.</p>
                 
-                {/* 피킹 가이드 테이블 */}
+                {/* 피킹 가이드 테이블 (유지) */}
                 <Table 
                     dataSource={pickingGuide}
                     pagination={false}
@@ -466,13 +454,10 @@ const OrderManagement = () => {
                     rowKey="id"
                     columns={[
                         { title: '상품명', dataIndex: 'product', width: 200 },
-                        { title: '필요수량', dataIndex: 'required_qty', width: 80, render: (t) => <b style={{color: 'red'}}>{t}</b> },
+                        { title: '필요', dataIndex: 'required_qty', width: 60, render: (t) => <b style={{color: 'red'}}>{t}</b> },
                         { title: '유통기한', dataIndex: 'expiry', width: 100 },
-                        { 
-                            title: '피킹 로케이션 (FEFO)', dataIndex: 'location', 
-                            render: (loc, record) => <Tag color={record.is_short ? 'volcano' : 'blue'}>{loc}</Tag>
-                        },
-                        { title: '현재 재고', dataIndex: 'stock_qty', width: 80 },
+                        { title: '위치', dataIndex: 'location', render: (l, r) => <Tag color={r.is_targeted ? 'purple' : (r.is_short ? 'volcano' : 'blue')}>{r.is_targeted ? '지정됨' : l}</Tag> },
+                        { title: '재고', dataIndex: 'stock_qty', width: 60 },
                     ]}
                     scroll={{ y: 200 }}
                     style={{ marginBottom: 20 }}
@@ -488,8 +473,11 @@ const OrderManagement = () => {
                 </Form>
             </Modal>
 
-            {/* 재고 선택 모달 */}
-            <Modal title="사용할 재고 선택 (피킹 지정)" open={isStockSelectVisible} onCancel={() => setIsStockSelectVisible(false)} footer={null} width={700}>
+            <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
+            {isAdmin && <TrackingUploadModal isOpen={isBulkTrackingVisible} onClose={() => setIsBulkTrackingVisible(false)} onUploadSuccess={fetchOrders} />}
+            
+            {/* 재고 선택 모달 (유지) */}
+            <Modal title="사용할 재고 선택" open={isStockSelectVisible} onCancel={() => setIsStockSelectVisible(false)} footer={null} width={700}>
                 <Table 
                     dataSource={stockList}
                     rowKey="id"
@@ -507,9 +495,6 @@ const OrderManagement = () => {
                     ]}
                 />
             </Modal>
-
-            <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
-            {isAdmin && <TrackingUploadModal isOpen={isBulkTrackingVisible} onClose={() => setIsBulkTrackingVisible(false)} onUploadSuccess={fetchOrders} />}
         </Layout>
     );
 };
