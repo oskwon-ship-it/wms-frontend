@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card, Alert, Statistic } from 'antd';
+// ★★★ [수정됨] Row, Col 추가 완료! (이게 없어서 에러가 났습니다)
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, InputNumber, DatePicker, Space, Radio, Card, Alert, Statistic, Row, Col } from 'antd';
 import { LogoutOutlined, UserOutlined, PlusOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, SearchOutlined, ReloadOutlined, FileExcelOutlined, ShopOutlined, BarcodeOutlined, ImportOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import ExcelUploadModal from '../components/ExcelUploadModal';
@@ -183,23 +184,18 @@ const OrderManagement = () => {
         }
     };
 
-    // ★★★ [수정됨] 재고 부족 시 등록 원천 차단 로직
     const handleNewOrder = async (values) => {
-        // 1. 재고 정보가 없으면 (바코드 조회를 안 했거나 실패했을 때)
         if (!stockInfo) {
             message.error('먼저 바코드를 조회하여 재고를 확인해주세요.');
             return;
         }
 
-        // 2. 가용 재고 확인 (Strict Check)
-        // 요청 수량보다 가용 재고가 적으면 에러를 띄우고 함수를 종료합니다. (return)
         if (stockInfo.available < values.quantity) {
             message.error(`❌ 재고 부족! 가용 재고(${stockInfo.available}개)가 주문 수량(${values.quantity}개)보다 적어 등록할 수 없습니다.`);
-            return; // 여기서 멈춤 (등록 안 됨)
+            return; 
         }
 
         try {
-            // 3. 재고가 충분할 때만 실행됨
             const orderData = {
                 customer: isAdmin ? values.customer_input : customerName, 
                 product: values.product,
@@ -333,8 +329,7 @@ const OrderManagement = () => {
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-             {/* Header & Sider (기존과 동일) */}
-             <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
+            <Header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: colorBgContainer }}>
                 <div style={{ color: '#000', fontWeight: 'bold' }}>3PL WMS</div>
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     <UserOutlined style={{ marginRight: 8 }} />
@@ -463,26 +458,6 @@ const OrderManagement = () => {
                         <Button type="primary" htmlType="submit" block size="large">입력 완료 및 출고 확정</Button>
                     </Form.Item>
                 </Form>
-            </Modal>
-
-            {/* 재고 선택 모달 */}
-            <Modal title="사용할 재고 선택 (피킹 지정)" open={isStockSelectVisible} onCancel={() => setIsStockSelectVisible(false)} footer={null} width={700}>
-                <Table 
-                    dataSource={stockList}
-                    rowKey="id"
-                    pagination={false}
-                    columns={[
-                        { title: '상품명', dataIndex: 'product_name' },
-                        { title: '유통기한', dataIndex: 'expiration_date', render: t => t || '-' },
-                        { title: '로케이션', dataIndex: 'location', render: t => <Tag color="blue">{t}</Tag> },
-                        { title: '현재고', dataIndex: 'quantity', render: q => <b>{q}</b> },
-                        { 
-                            title: '선택', 
-                            key: 'action', 
-                            render: (_, record) => <Button type="primary" size="small" onClick={() => handleSelectStock(record)}>선택</Button>
-                        }
-                    ]}
-                />
             </Modal>
 
             <ExcelUploadModal isOpen={isExcelModalVisible} onClose={() => setIsExcelModalVisible(false)} onUploadSuccess={fetchOrders} customerName={customerName} />
