@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, message, Popconfirm, Tag, Card, Space, Statistic, Row, Col } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, FileTextOutlined, RocketOutlined, SettingOutlined, ShopOutlined, ImportOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined } from '@ant-design/icons';
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, FileTextOutlined, RocketOutlined, SettingOutlined, ShopOutlined, ImportOutlined, CheckCircleOutlined, EditOutlined, UndoOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+// ★★★ [수정] TrackingUploadModal 가져오기 추가
 import TrackingUploadModal from '../components/TrackingUploadModal';
 
 const { Header, Content, Sider } = Layout;
@@ -10,7 +11,7 @@ const { Header, Content, Sider } = Layout;
 const OrderProcessing = () => {
     const navigate = useNavigate();
     const [isAdmin, setIsAdmin] = useState(false);
-    const [orders, setOrders] = useState([]); // 주문번호 단위로 그룹화된 데이터
+    const [orders, setOrders] = useState([]); 
     const [loading, setLoading] = useState(true);
 
     // 모달
@@ -46,7 +47,6 @@ const OrderProcessing = () => {
         fetchOrders();
     };
 
-    // 주문 데이터를 가져와서 '주문번호' 기준으로 그룹화
     const fetchOrders = async () => {
         const { data, error } = await supabase
             .from('orders')
@@ -64,7 +64,7 @@ const OrderProcessing = () => {
                         customer: item.customer,
                         shipping_type: item.shipping_type,
                         created_at: item.created_at,
-                        status: item.status, // 대표 상태
+                        status: item.status, 
                         tracking_number: item.tracking_number,
                         item_count: 0,
                         items: []
@@ -72,7 +72,6 @@ const OrderProcessing = () => {
                 }
                 groups[key].items.push(item);
                 groups[key].item_count += 1;
-                // 하나라도 처리대기면 그룹 전체를 대기로 표시
                 if (item.status === '처리대기') groups[key].status = '처리대기';
             });
             setOrders(Object.values(groups));
@@ -83,7 +82,6 @@ const OrderProcessing = () => {
     useEffect(() => { checkUser(); }, []); 
     const handleLogout = async () => { await supabase.auth.signOut(); navigate('/login'); };
 
-    // 피킹 리스트 생성 (재고 자동 할당 시뮬레이션)
     const openPickingModal = async (record) => {
         setSelectedOrderNo(record.order_number);
         setSelectedOrderIds(record.items.map(i => i.id));
@@ -92,7 +90,6 @@ const OrderProcessing = () => {
         const guide = [];
         for (const item of record.items) {
             let remain = item.quantity;
-            // FEFO (선입선출) 재고 조회
             const { data: stocks } = await supabase.from('inventory')
                 .select('*')
                 .eq('barcode', item.barcode)
@@ -123,17 +120,14 @@ const OrderProcessing = () => {
         setIsPickingVisible(true);
     };
 
-    // 출고 확정 (재고 차감 + 상태 변경)
     const handleShipConfirm = async (values) => {
         try {
-            // RPC 함수 호출 (재고 차감)
             const { error: rpcError } = await supabase.rpc('process_outbound', {
                 order_id_arr: selectedOrderIds,
-                worker_email: 'admin' // 관리자
+                worker_email: 'admin'
             });
             if (rpcError) throw rpcError;
 
-            // 송장번호 업데이트
             await supabase.from('orders')
                 .update({ tracking_number: values.tracking_number })
                 .in('id', selectedOrderIds);
