@@ -24,6 +24,7 @@ const InventoryHistory = () => {
 
     const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
+    // ★ 메뉴 이동 함수
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -136,7 +137,7 @@ const InventoryHistory = () => {
                 else if (t?.includes('출고') || t?.includes('파손')) color = 'volcano';
                 else if (t?.includes('이동')) color = 'blue';
                 else if (t?.includes('조정')) color = 'orange';
-                else if (t?.includes('유통기한')) color = 'cyan'; // ★ 유통기한 변경 색상 추가
+                else if (t?.includes('유통기한')) color = 'cyan'; 
                 
                 return <Tag color={color}>{t}</Tag>;
             }
@@ -180,7 +181,8 @@ const InventoryHistory = () => {
                 </div>
             </Header>
             <Layout>
-                <Sider theme="light" width={200}>
+                {/* ★ 메뉴 구조 통일 */}
+                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
                     <Menu 
                         mode="inline" 
                         defaultSelectedKeys={['4']} 
@@ -208,8 +210,6 @@ const InventoryHistory = () => {
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Space wrap>
                                 <RangePicker onChange={(dates) => setDateRange(dates)} placeholder={['시작일', '종료일']} />
-                                
-                                {/* ★★★ [수정] 모든 구분 항목 추가 완료 */}
                                 <Select defaultValue="all" style={{ width: 150 }} onChange={setReasonFilter}>
                                     <Option value="all">전체 구분</Option>
                                     <Option value="입고">입고</Option>
@@ -218,7 +218,7 @@ const InventoryHistory = () => {
                                     <Option value="신규 등록">신규 등록</Option>
                                     <Option value="출고">출고</Option>
                                     <Option value="로케이션 이동">로케이션 이동</Option>
-                                    <Option value="유통기한 변경">유통기한 변경</Option> {/* ★ 추가 */}
+                                    <Option value="유통기한 변경">유통기한 변경</Option>
                                     <Option value="실사조정">실사 재고 조정</Option>
                                     <Option value="파손/분실">파손/분실</Option>
                                     <Option value="재고 조정">재고 조정 (기본)</Option>
@@ -238,14 +238,7 @@ const InventoryHistory = () => {
                             </Space>
                         </Card>
 
-                        <Table 
-                            columns={columns} 
-                            dataSource={getFilteredData()} 
-                            rowKey="id" 
-                            pagination={{ pageSize: 15 }} 
-                            loading={loading}
-                            size="middle"
-                        />
+                        <Table columns={columns} dataSource={getFilteredData()} rowKey="id" pagination={{ pageSize: 15 }} loading={loading} size="middle" scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
             </Layout>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select, Tooltip } from 'antd';
+import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space, Checkbox, Divider, Select } from 'antd';
 import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, EditOutlined, AlertOutlined, InboxOutlined, PlusOutlined, FileExcelOutlined, ClockCircleOutlined, SearchOutlined, ReloadOutlined, HistoryOutlined, SwapRightOutlined, DownloadOutlined, ImportOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import InventoryUploadModal from '../components/InventoryUploadModal';
@@ -39,6 +39,7 @@ const InventoryManagement = () => {
 
     const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
+    // ★ 메뉴 이동 함수
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -59,22 +60,10 @@ const InventoryManagement = () => {
         fetchInventoryData();
     };
 
-    // ★★★ [핵심 수정] 공백 제거 및 정밀 매칭 로직 적용
     const fetchInventoryData = async () => {
         setLoading(true);
-        
-        // 1. 재고 가져오기
-        let invQuery = supabase
-            .from('inventory')
-            .select('*')
-            .order('product_name', { ascending: true })
-            .order('expiration_date', { ascending: true, nullsFirst: false });
-
-        // 2. 주문(처리대기) 가져오기 - ★ customer 컬럼 추가!
-        let ordQuery = supabase
-            .from('orders')
-            .select('barcode, quantity, customer') 
-            .eq('status', '처리대기');
+        let invQuery = supabase.from('inventory').select('*').order('product_name', { ascending: true }).order('expiration_date', { ascending: true, nullsFirst: false });
+        let ordQuery = supabase.from('orders').select('barcode, quantity').eq('status', '처리대기');
 
         const targetCustomer = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && targetCustomer && targetCustomer !== 'Unknown') {
@@ -87,45 +76,17 @@ const InventoryManagement = () => {
 
         const rawInventory = invRes.data || [];
         const pendingOrders = ordRes.data || [];
-
-        // 3. 주문 대기 수량 집계 (Map 사용)
         const pendingMap = {};
-        
-        pendingOrders.forEach(o => {
-            const qty = o.quantity || 1;
-            // ★ 공백 제거(trim) 후 키 생성 (고객사_바코드)
-            const cleanBarcode = (o.barcode || '').trim();
-            const cleanCustomer = (o.customer || '').trim();
-            const key = `${cleanCustomer}_${cleanBarcode}`;
-            
-            pendingMap[key] = (pendingMap[key] || 0) + qty;
-        });
+        pendingOrders.forEach(o => { const qty = o.quantity || 1; pendingMap[o.barcode] = (pendingMap[o.barcode] || 0) + qty; });
 
-        // 4. 재고에 매칭하여 차감 계산
         const calculatedInventory = rawInventory.map(item => {
-            // ★ 여기도 공백 제거하고 키 생성
-            const cleanBarcode = (item.barcode || '').trim();
-            const cleanCustomer = (item.customer_name || '').trim();
-            const key = `${cleanCustomer}_${cleanBarcode}`;
-            
+            const barcode = item.barcode;
             let allocated = 0;
-
-            if (pendingMap[key] > 0) {
-                // 남은 주문 대기량이 현재고보다 많으면 현재고만큼, 적으면 대기량만큼
-                if (pendingMap[key] >= item.quantity) {
-                    allocated = item.quantity;
-                    pendingMap[key] -= item.quantity;
-                } else {
-                    allocated = pendingMap[key];
-                    pendingMap[key] = 0;
-                }
+            if (pendingMap[barcode] > 0) {
+                if (pendingMap[barcode] >= item.quantity) { allocated = item.quantity; pendingMap[barcode] -= item.quantity; } 
+                else { allocated = pendingMap[barcode]; pendingMap[barcode] = 0; }
             }
-
-            return {
-                ...item,
-                allocated_quantity: allocated,
-                available_quantity: item.quantity - allocated
-            };
+            return { ...item, allocated_quantity: allocated, available_quantity: item.quantity - allocated };
         });
 
         setInventory(calculatedInventory);
@@ -314,7 +275,8 @@ const InventoryManagement = () => {
                 </div>
             </Header>
             <Layout>
-                <Sider theme="light" width={200}>
+                {/* ★ 메뉴 구조 통일 및 자동 숨김 적용 */}
+                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
                     <Menu mode="inline" defaultSelectedKeys={['3']} defaultOpenKeys={['sub1']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
@@ -328,37 +290,32 @@ const InventoryManagement = () => {
                 </Sider>
                 <Content style={{ margin: '16px' }}>
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
-                        <Row gutter={16} style={{ marginBottom: 24 }}>
-                            <Col span={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.available_quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
+                        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                            <Col xs={24} sm={8}><Card><Statistic title="총 보관 품목 수" value={inventory.length} prefix={<InboxOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title="재고 부족 품목" value={inventory.filter(i => i.available_quantity <= i.safe_quantity).length} valueStyle={{ color: '#cf1322' }} prefix={<AlertOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title={`유통기한 임박 (${alertDays}일 이내)`} value={urgentCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
-                            <Row justify="space-between" align="middle">
-                                <Col>
-                                    <Space>
-                                        <span><b>검색:</b></span>
-                                        <Input placeholder="바코드 또는 상품명 입력" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
-                                        <Button icon={<ReloadOutlined />} onClick={resetFilters}>초기화</Button>
-                                    </Space>
-                                </Col>
-                                <Col>
-                                    <Space split={<Divider type="vertical" />}>
-                                        <div>
-                                            <span>🚨 알림 기준일: </span>
-                                            <InputNumber min={1} max={365} value={alertDays} onChange={(val) => setAlertDays(val)} style={{ width: 70 }} /><span> 일</span>
-                                        </div>
-                                        <Checkbox checked={showOnlyUrgent} onChange={(e) => setShowOnlyUrgent(e.target.checked)} style={{color: 'red', fontWeight: 'bold'}}>임박 상품만 보기</Checkbox>
-                                        <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginLeft: 8 }}>목록 다운로드</Button>
-                                    </Space>
-                                </Col>
-                            </Row>
+                            <Space wrap>
+                                <RangePicker onChange={(dates) => setDateRange(dates)} />
+                                <Input placeholder="바코드, 상품명 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
+                                <Button icon={<ReloadOutlined />} onClick={resetFilters}>초기화</Button>
+                            </Space>
                         </Card>
-                        <Table columns={columns} dataSource={filteredInventory} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} />
+                        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
+                            <h3>실시간 재고 현황 ({filteredInventory.length}건)</h3>
+                            <div>
+                                <Button onClick={handleDownloadExcel} icon={<DownloadOutlined />} style={{ marginRight: 8 }}>목록 다운로드</Button>
+                                <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsAddModalVisible(true)} style={{ marginRight: 8 }}>신규 품목 등록</Button>
+                                <Button type="default" icon={<FileExcelOutlined />} onClick={() => setIsExcelModalVisible(true)} style={{ borderColor: '#28a745', color: '#28a745' }}>재고 일괄 등록</Button>
+                            </div>
+                        </div>
+                        {/* ★ 가로 스크롤 적용 */}
+                        <Table columns={columns} dataSource={filteredInventory} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
             </Layout>
-
+            
             <Modal title="신규 품목 등록" open={isAddModalVisible} onCancel={() => setIsAddModalVisible(false)} footer={null}>
                 <Form form={addForm} onFinish={handleAddInventory} layout="vertical" initialValues={{ quantity: 0, safe_quantity: 5 }}>
                     <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
@@ -400,7 +357,7 @@ const InventoryManagement = () => {
                     rowKey="id"
                     loading={historyLoading}
                     pagination={{ pageSize: 5 }}
-                    scroll={{ x: 'max-content' }} 
+                    scroll={{ x: 'max-content' }}
                     columns={[
                         { title: '일시', dataIndex: 'created_at', render: t => new Date(t).toLocaleString() },
                         { title: '구분', dataIndex: 'reason', render: t => <Tag color="geekblue">{t}</Tag> },

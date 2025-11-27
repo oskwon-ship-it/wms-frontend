@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Modal, Form, Input, InputNumber, message, Tag, Card, Statistic, Row, Col, DatePicker, Space } from 'antd';
-// ★ 아이콘들 모두 포함
 import { LogoutOutlined, UserOutlined, AppstoreOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, SearchOutlined, ReloadOutlined, DownloadOutlined, ImportOutlined, BarcodeOutlined, HistoryOutlined, PlusOutlined, CheckCircleOutlined, ZoomInOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -32,6 +31,7 @@ const InboundManagement = () => {
 
     const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
+    // ★ 메뉴 이동 함수
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -103,11 +103,7 @@ const InboundManagement = () => {
     };
 
     const handleBarcodeSearch = async (barcode) => {
-        if (!barcode) { 
-            message.warning('바코드를 입력해주세요.'); 
-            return; 
-        }
-
+        if (!barcode) { message.warning('바코드를 입력해주세요.'); return; }
         const cleanBarcode = barcode.trim();
         const targetCustomer = isAdmin ? form.getFieldValue('customer_name') : customerName;
 
@@ -139,7 +135,6 @@ const InboundManagement = () => {
         }
     };
 
-    // 1. 입고 요청 (재고 증가 X, 오직 inbound 테이블에만 저장)
     const handleInboundRequest = async (values) => {
         try {
             const inboundData = {
@@ -167,7 +162,6 @@ const InboundManagement = () => {
         }
     };
 
-    // 2. 검수 모달 열기
     const openInspectModal = (record) => {
         setInspectItem(record);
         inspectForm.setFieldsValue({
@@ -180,7 +174,6 @@ const InboundManagement = () => {
         setIsInspectModalVisible(true);
     };
 
-    // 3. 검수 승인 (재고 증가 O)
     const handleInspectConfirm = async (values) => {
         try {
             const finalData = {
@@ -191,10 +184,8 @@ const InboundManagement = () => {
                 worker: userEmail 
             };
 
-            // A. 실제 재고 업데이트 및 로그 기록
             await updateInventoryAndLog(finalData);
 
-            // B. 입고 내역 상태 변경 ('입고대기' -> '입고완료') 및 수정된 정보 저장
             const { error } = await supabase
                 .from('inbound')
                 .update({ 
@@ -259,14 +250,7 @@ const InboundManagement = () => {
             title: '관리',
             key: 'action',
             render: (_, record) => record.status === '입고대기' && (
-                <Button 
-                    type="primary" 
-                    size="small" 
-                    icon={<ZoomInOutlined />} 
-                    onClick={() => openInspectModal(record)}
-                >
-                    검수
-                </Button>
+                <Button size="small" type="primary" icon={<ZoomInOutlined />} onClick={() => openInspectModal(record)}>검수 및 승인</Button>
             )
         } : {}
     ].filter(col => col.title);
@@ -285,21 +269,16 @@ const InboundManagement = () => {
                 </div>
             </Header>
             <Layout>
-                <Sider theme="light" width={200}>
-                    <Menu 
-                        mode="inline" 
-                        defaultSelectedKeys={['5']} 
-                        defaultOpenKeys={['sub1']}
-                        style={{ height: '100%', borderRight: 0 }}
-                        onClick={handleMenuClick}
-                    >
+                {/* ★ 메뉴 구조 통일 및 자동 숨김 적용 */}
+                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
+                    <Menu mode="inline" defaultSelectedKeys={['5']} defaultOpenKeys={['sub1']} style={{ height: '100%', borderRight: 0 }} onClick={handleMenuClick}>
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item> 
+                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
                         <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
@@ -307,69 +286,42 @@ const InboundManagement = () => {
                     <div style={{ padding: 24, minHeight: '100%', background: colorBgContainer, borderRadius: borderRadiusLG }}>
                         
                         <Row gutter={16} style={{ marginBottom: 24 }}>
-                            <Col span={8}><Card><Statistic title="총 입고 건수" value={filteredInbounds.length} prefix={<ImportOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="총 입고 수량" value={totalInbound} valueStyle={{ color: '#3f8600' }} prefix={<ShopOutlined />} /></Card></Col>
-                            <Col span={8}><Card><Statistic title="승인 대기중" value={pendingCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title="총 입고 건수" value={filteredInbounds.length} prefix={<ImportOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title="총 입고 수량" value={totalInbound} valueStyle={{ color: '#3f8600' }} prefix={<ShopOutlined />} /></Card></Col>
+                            <Col xs={24} sm={8}><Card><Statistic title="승인 대기중" value={pendingCount} valueStyle={{ color: '#faad14' }} prefix={<ClockCircleOutlined />} /></Card></Col>
                         </Row>
 
                         <Card style={{ marginBottom: 20, background: '#f5f5f5' }} bordered={false} size="small">
                             <Space wrap>
                                 <RangePicker onChange={(dates) => setDateRange(dates)} />
-                                <Input 
-                                    placeholder="바코드, 상품명 검색" 
-                                    prefix={<SearchOutlined />} 
-                                    value={searchText}
-                                    onChange={(e) => setSearchText(e.target.value)}
-                                    style={{ width: 250 }}
-                                />
+                                <Input placeholder="바코드, 상품명 검색" prefix={<SearchOutlined />} value={searchText} onChange={(e) => setSearchText(e.target.value)} style={{ width: 250 }} />
                                 <Button icon={<ReloadOutlined />} onClick={() => { setSearchText(''); setDateRange(null); }}>초기화</Button>
                             </Space>
                         </Card>
 
                         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
                             <h3>입고 내역</h3>
-                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalVisible(true)}>
-                                입고 등록
-                            </Button>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalVisible(true)}>입고 등록</Button>
                         </div>
                         
-                        <Table columns={columns} dataSource={filteredInbounds} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} />
+                        <Table columns={columns} dataSource={filteredInbounds} rowKey="id" pagination={{ pageSize: 10 }} loading={loading} scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
             </Layout>
-
-            {/* 입고 등록 모달 */}
-            <Modal title="입고 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null}>
+            
+            <Modal title="입고 등록" open={isModalVisible} onCancel={() => setIsModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <Form form={form} onFinish={handleInboundRequest} layout="vertical" initialValues={{ quantity: 1 }}>
-                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}>
-                        <Input disabled={!isAdmin} /> 
-                    </Form.Item>
-                    <Form.Item name="barcode" label="바코드 (스캔 후 엔터)" rules={[{ required: true }]}>
-                        <Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} />
-                    </Form.Item>
-                    <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-                    <Form.Item name="expiration_date" label="유통기한">
-                        <DatePicker style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item name="location" label="입고 로케이션">
-                        <Input placeholder="예: A-01-01" />
-                    </Form.Item>
-                    <Form.Item name="quantity" label="입고 수량" rules={[{ required: true }]}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                    </Form.Item>
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" block size="large">
-                            {isAdmin ? '입고 요청 (관리자도 대기 후 승인)' : '입고 요청 (승인 대기)'}
-                        </Button>
-                    </Form.Item>
+                    <Form.Item name="customer_name" label="고객사" rules={[{ required: true }]} initialValue={!isAdmin ? customerName : ''}><Input disabled={!isAdmin} /></Form.Item>
+                    <Form.Item name="barcode" label="바코드" rules={[{ required: true }]}><Search placeholder="바코드 스캔" onSearch={handleBarcodeSearch} enterButton={<Button icon={<BarcodeOutlined />}>조회</Button>} /></Form.Item>
+                    <Form.Item name="product_name" label="상품명" rules={[{ required: true }]}><Input /></Form.Item>
+                    <Form.Item name="expiration_date" label="유통기한"><DatePicker style={{ width: '100%' }} /></Form.Item>
+                    <Form.Item name="location" label="입고 로케이션"><Input placeholder="예: A-01-01" /></Form.Item>
+                    <Form.Item name="quantity" label="입고 수량" rules={[{ required: true }]}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
+                    <Form.Item><Button type="primary" htmlType="submit" block size="large">{isAdmin ? '입고 확정 (즉시 반영)' : '입고 요청 (승인 대기)'}</Button></Form.Item>
                 </Form>
             </Modal>
 
-            {/* 검수 모달 */}
-            <Modal title="입고 검수 및 승인" open={isInspectModalVisible} onCancel={() => setIsInspectModalVisible(false)} footer={null}>
-                <p style={{marginBottom: 20, color: 'gray'}}>실물 확인 후 정확한 수량과 유통기한을 입력해주세요. 확인을 누르면 재고에 반영됩니다.</p>
+            <Modal title="입고 검수 및 승인" open={isInspectModalVisible} onCancel={() => setIsInspectModalVisible(false)} footer={null} style={{ top: 20 }}>
                 <Form form={inspectForm} onFinish={handleInspectConfirm} layout="vertical">
                     <Form.Item name="product_name" label="상품명"><Input disabled /></Form.Item>
                     <Form.Item name="barcode" label="바코드"><Input disabled /></Form.Item>

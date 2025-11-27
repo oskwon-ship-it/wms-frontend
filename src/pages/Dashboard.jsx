@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Row, Col, Card, Statistic, Tag } from 'antd';
-// ★ ImportOutlined 추가
 import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, HistoryOutlined, ImportOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,8 +14,11 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [customerName, setCustomerName] = useState(''); 
 
-    const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
+    const {
+        token: { colorBgContainer, borderRadiusLG },
+    } = theme.useToken();
 
+    // ★ 메뉴 이동 함수 (전체 페이지 통일)
     const handleMenuClick = (e) => {
         if (e.key === '1') navigate('/dashboard');
         if (e.key === '2') navigate('/orders');
@@ -28,21 +30,37 @@ const Dashboard = () => {
     const checkUser = async () => {
         setLoading(true);
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { navigate('/login'); return; }
+
+        if (!user) {
+            navigate('/login');
+            return;
+        }
+
         setUserEmail(user.email);
         const isAdministrator = user.email === 'kos@cbg.com';
         setIsAdmin(isAdministrator);
-        const { data: profile } = await supabase.from('profiles').select('customer_name').eq('id', user.id).single();
+
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('customer_name')
+            .eq('id', user.id)
+            .single();
+
         if (profile) setCustomerName(profile.customer_name);
         fetchOrders();
     };
 
     const fetchOrders = async () => {
-        let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
+        let query = supabase
+            .from('orders')
+            .select('*')
+            .order('created_at', { ascending: false });
+
         const nameToFilter = customerName || (userEmail === 'kos@cbg.com' ? null : 'Unknown');
         if (!isAdmin && nameToFilter && nameToFilter !== 'Unknown') {
              query = query.eq('customer', nameToFilter); 
         }
+
         const { data, error } = await query;
         if (!error) setOrders(data || []);
         setLoading(false);
@@ -84,22 +102,23 @@ const Dashboard = () => {
                 </div>
             </Header>
             <Layout>
-                <Sider theme="light" width={200}>
+                <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
                     <Menu 
                         mode="inline" 
                         defaultSelectedKeys={['1']} 
-                        defaultOpenKeys={['sub1']}
                         style={{ height: '100%', borderRight: 0 }}
                         onClick={handleMenuClick}
                     >
                         <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
+                        
+                        {/* ★ 서브 메뉴 및 입고 관리 추가 */}
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
                             <Menu.Item key="3">실시간 재고</Menu.Item>
                             <Menu.Item key="4">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        {/* ★ 입고 관리 추가 */}
                         <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
+
                         <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
@@ -110,8 +129,9 @@ const Dashboard = () => {
                             <Col span={8}><Card><Statistic title="처리 대기중" value={countUniqueOrders(orders.filter(o => o.status === '처리대기'))} valueStyle={{ color: '#cf1322' }} /></Card></Col>
                             <Col span={8}><Card><Statistic title="출고 완료" value={countUniqueOrders(orders.filter(o => o.status === '출고완료'))} valueStyle={{ color: '#3f8600' }} prefix={<CarOutlined />} /></Card></Col>
                         </Row>
+
                         <h3>최근 들어온 주문 (상위 5건)</h3>
-                        <Table columns={columns} dataSource={orders.slice(0, 5)} rowKey="id" pagination={false} loading={loading} />
+                        <Table columns={columns} dataSource={orders.slice(0, 5)} rowKey="id" pagination={false} loading={loading} scroll={{ x: 'max-content' }} />
                     </div>
                 </Content>
             </Layout>
