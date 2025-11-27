@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Layout, Menu, Button, theme, Table, Row, Col, Card, Statistic, Tag } from 'antd';
-import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, UnorderedListOutlined, SettingOutlined, ShopOutlined, HistoryOutlined, ImportOutlined } from '@ant-design/icons';
+// ★ 아이콘 추가 (FileTextOutlined, RocketOutlined)
+import { LogoutOutlined, UserOutlined, AppstoreOutlined, DropboxOutlined, CarOutlined, SettingOutlined, ShopOutlined, HistoryOutlined, ImportOutlined, FileTextOutlined, RocketOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
 const { Header, Content, Sider } = Layout;
@@ -18,13 +19,14 @@ const Dashboard = () => {
         token: { colorBgContainer, borderRadiusLG },
     } = theme.useToken();
 
-    // ★ 메뉴 이동 함수 (전체 페이지 통일)
+    // ★★★ [수정] 메뉴 이동 경로 변경
     const handleMenuClick = (e) => {
-        if (e.key === '1') navigate('/dashboard');
-        if (e.key === '2') navigate('/orders');
-        if (e.key === '3') navigate('/inventory');
-        if (e.key === '4') navigate('/history');
-        if (e.key === '5') navigate('/inbound');
+        if (e.key === 'dashboard') navigate('/dashboard');
+        if (e.key === 'order-entry') navigate('/order-entry');   // 주문 접수
+        if (e.key === 'order-process') navigate('/order-process'); // 송장/출고
+        if (e.key === 'inventory') navigate('/inventory');
+        if (e.key === 'history') navigate('/history');
+        if (e.key === 'inbound') navigate('/inbound');
     };
 
     const checkUser = async () => {
@@ -105,21 +107,27 @@ const Dashboard = () => {
                 <Sider theme="light" width={200} breakpoint="lg" collapsedWidth="0">
                     <Menu 
                         mode="inline" 
-                        defaultSelectedKeys={['1']} 
+                        defaultSelectedKeys={['dashboard']} 
                         style={{ height: '100%', borderRight: 0 }}
                         onClick={handleMenuClick}
                     >
-                        <Menu.Item key="1" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
-                        <Menu.Item key="2" icon={<UnorderedListOutlined />}>주문 관리</Menu.Item>
+                        <Menu.Item key="dashboard" icon={<AppstoreOutlined />}>대시보드</Menu.Item>
                         
-                        {/* ★ 서브 메뉴 및 입고 관리 추가 */}
+                        {/* ★★★ [수정] 메뉴 분리 적용 */}
+                        <Menu.Item key="order-entry" icon={<FileTextOutlined />}>주문 접수</Menu.Item>
+                        
+                        {/* 관리자에게만 보이는 송장/출고 메뉴 */}
+                        {isAdmin && (
+                            <Menu.Item key="order-process" icon={<RocketOutlined />}>송장/출고 관리</Menu.Item>
+                        )}
+                        
                         <Menu.SubMenu key="sub1" icon={<ShopOutlined />} title="재고 관리">
-                            <Menu.Item key="3">실시간 재고</Menu.Item>
-                            <Menu.Item key="4">재고 수불부</Menu.Item>
+                            <Menu.Item key="inventory">실시간 재고</Menu.Item>
+                            <Menu.Item key="history">재고 수불부</Menu.Item>
                         </Menu.SubMenu>
-                        <Menu.Item key="5" icon={<ImportOutlined />}>입고 관리</Menu.Item>
-
-                        <Menu.Item key="6" icon={<SettingOutlined />}>설정</Menu.Item>
+                        
+                        <Menu.Item key="inbound" icon={<ImportOutlined />}>입고 관리</Menu.Item>
+                        <Menu.Item key="settings" icon={<SettingOutlined />}>설정</Menu.Item>
                     </Menu>
                 </Sider>
                 <Content style={{ margin: '16px' }}>
