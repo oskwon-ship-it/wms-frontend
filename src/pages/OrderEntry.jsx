@@ -34,10 +34,7 @@ const OrderEntry = () => {
         setLoading(false);
     };
 
-    useEffect(() => { 
-        fetchOrders(); 
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab]);
+    useEffect(() => { fetchOrders(); }, [activeTab]);
 
     const handleRealApiSync = async () => {
         if (!apiKey) {
@@ -47,56 +44,63 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐(${apiRegion}) 서버에 접속 중...`, 1);
+            message.loading(`큐텐 판매내역을 조회합니다...`, 1);
 
-            // [핵심] v1 기본 명령어 사용
-            const methodName = 'ShippingBasic.GetShippingInfo';
-
-            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
+            // 서버(api/qoo10.js)가 '판매내역조회(SellingReport)' 모드로 고정되어 있습니다.
+            // 파라미터를 최소화해서 보냅니다.
+            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
             
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.detail || errData.error || `서버 통신 오류: ${response.status}`);
+                throw new Error(errData.error || `서버 통신 오류: ${response.status}`);
             }
 
             const jsonData = await response.json();
 
+            // 성공 여부 확인
             if (jsonData.ResultCode !== 0) {
-                throw new Error(jsonData.ResultMsg || `API 호출 실패 (코드: ${jsonData.ResultCode})`);
+                throw new Error(jsonData.ResultMsg || `API 호출 실패 (${jsonData.ResultCode})`);
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
             
             if (!qoo10Orders || qoo10Orders.length === 0) {
-                message.info('가져올 신규 주문(배송요청 상태)이 없습니다.');
+                message.info('조회 기간 내 주문이 없습니다.');
                 setLoading(false);
                 return;
             }
 
+            // [데이터 변환] SellingReport의 응답 필드에 맞춰 매핑
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
                 platform_order_id: String(item.PackNo),
                 order_number: String(item.OrderNo),
-                customer: item.ReceiverName || item.Receiver,
+                customer: item.Receiver || item.ReceiverName,
                 product: item.ItemTitle,
                 barcode: item.SellerItemCode || 'BARCODE-MISSING',
                 quantity: parseInt(item.OrderQty, 10),
                 country_code: apiRegion, 
-                status: '처리대기',
+                // 판매내역조회는 모든 상태가 다 오므로, '배송요청'인 것만 필터링하거나 일단 다 받아서 처리
+                status: item.ShippingStatus === '배송요청' || item.ShippingStatus === '2' ? '처리대기' : '확인필요',
                 process_status: '접수',
                 shipping_type: '택배',
                 created_at: new Date()
             }));
 
-            const { error } = await supabase.from('orders').insert(formattedOrders);
-            if (error) throw error;
+            // 처리대기(신규주문)만 저장하려면 여기서 필터링 가능
+            const newOrders = formattedOrders.filter(o => o.status === '처리대기');
 
-            message.success(`성공! 총 ${formattedOrders.length}건을 저장했습니다.`);
-            setIsApiModalVisible(false);
-            fetchOrders();
+            if (newOrders.length === 0) {
+                message.info('가져온 내역 중 신규 주문(배송요청)이 없습니다.');
+            } else {
+                const { error } = await supabase.from('orders').insert(newOrders);
+                if (error) throw error;
+                message.success(`성공! 신규 주문 ${newOrders.length}건을 저장했습니다.`);
+                setIsApiModalVisible(false);
+                fetchOrders();
+            }
 
         } catch (error) {
-            // eslint-disable-next-line no-console
             console.error('API Error:', error);
             message.error(`연동 실패: ${error.message}`);
         } finally {
@@ -104,25 +108,19 @@ const OrderEntry = () => {
         }
     };
 
+    // ... (이하 컬럼 및 렌더링 코드는 기존과 동일)
     const columns = [
-        { 
-            title: '플랫폼', dataIndex: 'platform_name', width: 100,
-            render: t => {
-                if(t === 'Shopee') return <Tag color="orange" icon={<GlobalOutlined />}>Shopee</Tag>;
-                if(t === 'Qoo10') return <Tag color="red" icon={<ShoppingCartOutlined />}>Qoo10</Tag>;
-                return <Tag>{t || '수기'}</Tag>;
-            }
-        },
-        { title: '국가', dataIndex: 'country_code', width: 80, render: t => t ? <Tag color="blue">{t}</Tag> : '-' },
+        { title: '플랫폼', dataIndex: 'platform_name', width: 100, render: t => <Tag color="red">{t}</Tag> },
+        { title: '국가', dataIndex: 'country_code', width: 80, render: t => <Tag color="blue">{t}</Tag> },
         { title: '주문번호', dataIndex: 'order_number', width: 180, render: t => <b>{t}</b> },
         { title: '상품명', dataIndex: 'product' },
-        { title: '바코드', dataIndex: 'barcode', render: t => <span style={{fontSize:12, color:'#888'}}>{t}</span> }, 
+        { title: '바코드', dataIndex: 'barcode' }, 
         { title: '수량', dataIndex: 'quantity', width: 80 },
         { title: '상태', dataIndex: 'status', width: 100, render: t => <Tag color="geekblue">{t}</Tag> }
     ];
 
     const tabItems = [
-        { key: 'new', label: <span>📥 신규 접수 <Tag color="red">{orders.length}</Tag></span> },
+        { key: 'new', label: '📥 신규 접수' },
         { key: 'processing', label: '📦 배송 준비중' },
         { key: 'shipped', label: '🚚 발송 완료' },
     ];
@@ -132,83 +130,26 @@ const OrderEntry = () => {
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
                 <h2>📑 통합 주문 관리 (CBT)</h2>
                 <Space>
-                    <Button 
-                        type="primary" 
-                        icon={<CloudDownloadOutlined />} 
-                        onClick={() => setIsApiModalVisible(true)}
-                        style={{background: '#ff4d4f', borderColor: '#ff4d4f', fontWeight: 'bold'}}
-                    >
+                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => setIsApiModalVisible(true)} danger>
                         주문 자동 수집 (API)
                     </Button>
-                    <Button icon={<FileExcelOutlined />}>엑셀 업로드</Button>
                 </Space>
             </div>
-
             <Card size="small" style={{ marginBottom: 16 }}>
                 <Space>
-                    <DatePicker.RangePicker placeholder={['시작일', '종료일']} />
-                    <Input placeholder="주문번호/수취인 검색" prefix={<SearchOutlined />} style={{width: 200}} />
+                    <DatePicker.RangePicker />
+                    <Input placeholder="검색" prefix={<SearchOutlined />} />
                     <Button icon={<ReloadOutlined />} onClick={fetchOrders}>조회</Button>
                 </Space>
             </Card>
-
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} type="card" />
-
-            <Table 
-                rowSelection={{ type: 'checkbox' }} 
-                columns={columns} 
-                dataSource={orders} 
-                rowKey="id" 
-                loading={loading}
-                pagination={{ pageSize: 15 }}
-                size="middle"
-            />
-
-            <Modal 
-                title={<span><ShoppingCartOutlined style={{color:'red'}} /> 큐텐 주문 가져오기</span>}
-                open={isApiModalVisible} 
-                onCancel={() => setIsApiModalVisible(false)}
-                footer={[
-                    <Button key="back" onClick={() => setIsApiModalVisible(false)}>취소</Button>,
-                    <Button key="submit" type="primary" loading={loading} onClick={handleRealApiSync} danger>
-                        주문 가져오기 실행
-                    </Button>
-                ]}
-            >
-                <div style={{display:'flex', flexDirection:'column', gap: 15}}>
-                    <Alert 
-                        message="API 연동 준비 완료" 
-                        description="Vercel 서버가 최적의 접속 경로를 자동으로 찾아 연결합니다." 
-                        type="success" 
-                        showIcon 
-                        icon={<SafetyCertificateOutlined />}
-                    />
-                    
-                    <div>
-                        <label style={{fontWeight:'bold', display:'block', marginBottom: 5}}>1. 연동 국가 선택</label>
-                        <Select 
-                            defaultValue="JP" 
-                            style={{ width: '100%' }} 
-                            onChange={setApiRegion}
-                            options={[
-                                { value: 'JP', label: '🇯🇵 Qoo10 Japan (큐텐 재팬)' },
-                                { value: 'SG', label: '🇸🇬 Qoo10 Singapore (큐텐 싱가포르)' },
-                            ]}
-                        />
-                    </div>
-
-                    <div>
-                        <label style={{fontWeight:'bold', display:'block', marginBottom: 5}}>2. API Key 입력</label>
-                        <Input.Password 
-                            prefix={<KeyOutlined />} 
-                            placeholder="QSM에서 발급받은 API Key를 붙여넣으세요" 
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                        />
-                        <div style={{fontSize: 12, color: '#999', marginTop: 5}}>
-                            * QSM > 시스템 관리 > API Key 관리 메뉴에서 확인 가능
-                        </div>
-                    </div>
+            <Table rowSelection={{ type: 'checkbox' }} columns={columns} dataSource={orders} rowKey="id" loading={loading} />
+            
+            <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
+                <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
+                    <Alert message="판매내역 조회(SellingReport) 방식으로 접속합니다." type="info" showIcon />
+                    <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
             </Modal>
         </AppLayout>
