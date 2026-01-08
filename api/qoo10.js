@@ -7,13 +7,13 @@ export default async function handler(request) {
   const apiKey = searchParams.get('key');
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ result: 'API Key가 입력되지 않았습니다.' }), { status: 400 });
+    return new Response(JSON.stringify({ result: 'API Key 없음' }), { status: 400 });
   }
 
-  // 1. 날짜 설정 (YYYYMMDD)
+  // 1. 날짜 설정 (YYYYMMDD) - 테스트 폼 포맷 준수
   const now = new Date();
   const past = new Date();
-  past.setDate(now.getDate() - 30); // 30일 조회
+  past.setDate(now.getDate() - 30); 
 
   const formatDate = (date) => {
     const y = date.getFullYear();
@@ -25,52 +25,47 @@ export default async function handler(request) {
   const sDate = formatDate(past);
   const eDate = formatDate(now);
 
-  // 2. ★★★ 타겟 URL 수정 (v3는 URL에 메서드가 포함됨) ★★★
-  // 테스트 폼에 적힌 그대로 주소 뒤에 메서드를 붙입니다.
-  const targetUrl = 'https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi/ShippingBasic.GetShippingInfo_v3';
+  // 2. ★★★ 주소 변경: api.qoo10.jp -> www.qoo10.jp ★★★
+  // 테스트 폼 스크린샷에 적힌 주소 그대로 씁니다.
+  const targetUrl = 'https://www.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi/ShippingBasic.GetShippingInfo_v3';
 
-  // 3. 파라미터 조립 (v3 표준)
+  // 3. 파라미터 조립 (군더더기 제거)
   const bodyData = new URLSearchParams();
   
-  // 키를 두 가지 이름으로 다 보냅니다 (혹시 몰라서)
-  bodyData.append('key', apiKey);
+  // (1) 인증키: 'key' 빼고 'CertificationKey'만 보냅니다. (테스트 폼 기준)
   bodyData.append('CertificationKey', apiKey);
 
-  // 메서드 파라미터는 URL에 있으니 제거하거나, 중복 전송해도 무관하지만 v3 스펙 준수
-  // bodyData.append('method', '...'); // 이건 뺍니다.
-
-  // 사장님이 캡처해주신 v3 파라미터 그대로 적용
-  bodyData.append('ShippingStatus', '2');    // 배송요청 (신규주문)
-  bodyData.append('SearchStartDate', sDate); // YYYYMMDD
-  bodyData.append('SearchEndDate', eDate);   // YYYYMMDD
-  bodyData.append('SearchCondition', '1');   // 주문일 기준
+  // (2) 나머지 파라미터 (스크린샷 그대로)
+  bodyData.append('ShippingStatus', '2');    // 2: 배송요청
+  bodyData.append('SearchStartDate', sDate); 
+  bodyData.append('SearchEndDate', eDate);   
+  bodyData.append('SearchCondition', '1');   
 
   try {
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0'
+        'User-Agent': 'Mozilla/5.0' // 브라우저인 척 위장
       },
       body: bodyData.toString()
     });
 
     const text = await response.text();
     
-    // 큐텐 서버가 에러(400, 500 등)를 냈을 때
-    if (!response.ok) {
+    // 혹시 HTML(에러 페이지)이 오면 바로 보고
+    if (text.trim().startsWith('<')) {
          return new Response(JSON.stringify({ 
-            error: "Qoo10 서버 에러", 
-            status: response.status,
-            details: text 
-        }), { status: response.status });
+            error: "HTML 응답 수신(주소 오류 가능성)", 
+            preview: text.substring(0, 100) 
+        }), { status: 500 });
     }
 
     let json;
     try {
         json = JSON.parse(text);
     } catch (e) {
-        return new Response(JSON.stringify({ error: "파싱 실패", raw: text }), { status: 500 });
+        return new Response(JSON.stringify({ error: "JSON 파싱 실패", raw: text }), { status: 500 });
     }
 
     return new Response(JSON.stringify({

@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, CheckCircleOutlined, ThunderboltOutlined
+    KeyOutlined, ThunderboltOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -13,6 +13,12 @@ const OrderEntry = () => {
     const [activeTab, setActiveTab] = useState('new'); 
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
+
+    // ★★★ [디버깅] 버튼 클릭 시 무조건 실행되는 함수
+    const showApiModal = () => {
+        alert("버튼이 눌렸습니다! 팝업을 엽니다."); // 이 창이 안 뜨면 브라우저 새로고침 필요
+        setIsApiModalVisible(true);
+    };
 
     const fetchOrders = async () => {
         setLoading(true);
@@ -29,48 +35,37 @@ const OrderEntry = () => {
 
     const handleRealApiSync = async () => {
         if (!apiKey) {
-            message.warning('API Key를 입력해주세요!');
+            alert('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        message.loading("Qoo10 v3 API 접속 중...", 1);
+        message.loading("Qoo10 서버(www.qoo10.jp) 접속 시도...", 1);
 
         try {
-            // encodeURIComponent로 키에 특수문자가 있어도 안전하게 전송
             const response = await fetch(`/api/qoo10?key=${encodeURIComponent(apiKey)}`);
-            
-            // HTTP 상태 코드가 200이 아니면 에러 처리
-            if (!response.ok) {
-                const errData = await response.json();
-                Modal.error({
-                    title: `서버 통신 오류 (${response.status})`,
-                    content: (
-                        <div>
-                            <p>Qoo10 서버 또는 연결 과정에서 오류가 발생했습니다.</p>
-                            <p style={{color:'red', background:'#f0f0f0', padding:10, borderRadius:5}}>
-                                {JSON.stringify(errData)}
-                            </p>
-                        </div>
-                    )
-                });
+            const jsonData = await response.json();
+
+            console.log("서버 응답:", jsonData); // F12 콘솔 확인용
+
+            // 1. 서버 에러 체크
+            if (jsonData.error) {
+                alert(`통신 에러:\n${jsonData.error}\n${jsonData.preview || ''}`);
                 setLoading(false);
                 return;
             }
 
-            const jsonData = await response.json();
-
-            // 1. 큐텐 내부 에러 체크
+            // 2. 큐텐 내부 에러 체크 (ResultCode)
             if (jsonData.data && jsonData.data.ResultCode && jsonData.data.ResultCode < 0) {
                  Modal.error({
-                    title: 'API 결과 오류',
+                    title: 'API 거절됨',
                     content: `코드: ${jsonData.data.ResultCode}\n메시지: ${jsonData.data.ResultMsg}`
                 });
                 setLoading(false);
                 return;
             }
 
-            // 2. 데이터 추출
+            // 3. 데이터 추출
             let qoo10Orders = [];
             const rawData = jsonData.data;
 
@@ -80,14 +75,13 @@ const OrderEntry = () => {
                 qoo10Orders = rawData.flat(Infinity).filter(item => item && item.OrderNo);
             }
 
-            // 3. 결과 처리
+            // 4. 결과 처리
             if (!qoo10Orders || qoo10Orders.length === 0) {
                 Modal.info({
-                    title: '연동 성공 (신규 주문 없음)',
-                    content: 'v3 API 연결에 성공했습니다! 다만 현재 배송요청(Stat:2) 상태인 주문이 없습니다.'
+                    title: '연동 성공 (주문 없음)',
+                    content: '연결은 성공했습니다! (주소: www.qoo10.jp)\n다만, 최근 30일간 신규 주문이 없습니다.'
                 });
             } else {
-                // 4. DB 저장
                 const formattedOrders = qoo10Orders.map(item => ({
                     platform_name: 'Qoo10',
                     platform_order_id: String(item.PackNo || item.OrderNo),
@@ -96,7 +90,7 @@ const OrderEntry = () => {
                     product: item.ItemTitle || item.ItemName,
                     barcode: item.SellerItemCode || 'BARCODE-MISSING',
                     quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
-                    shipping_address: item.ReceiverAddr || item.ShippingAddr || '',
+                    shipping_address: item.ReceiverAddr || item.ShippingAddr || '', // 주소!
                     shipping_memo: item.ShippingMsg || '',
                     country_code: 'JP', 
                     status: '처리대기',
@@ -108,15 +102,15 @@ const OrderEntry = () => {
                 await supabase.from('orders').insert(formattedOrders);
                 
                 Modal.success({
-                    title: 'v3 주문 수집 성공! 🎉',
-                    content: `총 ${formattedOrders.length}건의 신규 주문을 가져왔습니다.`
+                    title: '주문 수집 성공! 🎉',
+                    content: `총 ${formattedOrders.length}건을 가져왔습니다.\n주소/전화번호 포함됨.`
                 });
                 fetchOrders(); 
             }
             setIsApiModalVisible(false);
 
         } catch (error) {
-            message.error(`시스템 에러: ${error.message}`);
+            alert(`실행 중 에러: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -143,7 +137,7 @@ const OrderEntry = () => {
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
                 <h2>📑 통합 주문 관리 (CBT)</h2>
                 <Space>
-                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => setIsApiModalVisible(true)} danger>
+                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={showApiModal} danger>
                         주문 자동 수집 (API)
                     </Button>
                 </Space>
@@ -161,8 +155,8 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="최신 API(v3) URL 적용" 
-                        description="Method가 포함된 URL과 v3 파라미터로 접속합니다."
+                        message="v3 정밀 연결 (www.qoo10.jp)" 
+                        description="테스트 폼과 100% 동일한 주소와 설정으로 접속합니다."
                         type="success" 
                         showIcon 
                         icon={<ThunderboltOutlined />}
