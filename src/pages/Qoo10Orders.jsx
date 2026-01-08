@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { Table, Button, Input, Card, Modal, Tag, Row, Col, Statistic, Space, Divider } from 'antd';
+import { Table, Button, Input, Card, Modal, Tag, Row, Col, Statistic, Space } from 'antd';
 import { 
     CloudDownloadOutlined, 
     KeyOutlined, 
@@ -16,7 +16,7 @@ const Qoo10Orders = () => {
     const [loading, setLoading] = useState(false);
     const [orders, setOrders] = useState([]); 
 
-    // 1. 큐텐 API 호출 (성공했던 v1 방식)
+    // 1. 큐텐 API 호출 (v1 방식)
     const handleFetchOrders = async () => {
         if (!apiKey) {
             Modal.warning({ title: '알림', content: 'API Key를 입력해주세요.' });
@@ -49,7 +49,7 @@ const Qoo10Orders = () => {
                 } else {
                     // 데이터 가공
                     const formatted = items.map(item => ({
-                        key: item.OrderNo,
+                        key: item.OrderNo, 
                         order_no: String(item.OrderNo),
                         pack_no: String(item.PackNo),
                         product: item.ItemTitle || item.ItemName,
