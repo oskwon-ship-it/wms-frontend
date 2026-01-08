@@ -5,8 +5,6 @@ export const config = {
 export default async function handler(request) {
   const { searchParams } = new URL(request.url);
   const apiKey = searchParams.get('key');
-  
-  // 프론트엔드에서 보낸 메소드 이름 (예: ShippingInfo.GetShippingInfo)
   let method = searchParams.get('method'); 
   const region = searchParams.get('region');
 
@@ -14,25 +12,22 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ error: 'API Key is missing' }), { status: 400 });
   }
 
-  // ★ 1. PDF 분석 결과 적용: Namespace 자동 보정
-  // 사장님이 'ShippingInfo'로 보내더라도, PDF에 나온 'ShippingBasic'으로 바꿔서 요청합니다.
-  if (method && method.startsWith('ShippingInfo.')) {
-      method = method.replace('ShippingInfo.', 'ShippingBasic.');
-  }
-
-  // ★ 2. PDF 분석 결과 적용: 도메인은 www.qoo10.jp [cite: 110]
+  // 1. PDF 문서대로 도메인은 www.qoo10.jp
   const host = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
   
-  // ★ 3. PDF 분석 결과 적용: URL 패턴은 .../ebayjapan.qapi/{메소드명} [cite: 474]
+  // 2. URL 패턴 조립 (.../ebayjapan.qapi/{메소드명})
   const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi/${method}`;
 
-  // ★ 4. PDF 분석 결과 적용: 요청 방식은 POST [cite: 107]
+  // 3. 데이터 설정 (POST Body)
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
   
-  // 주문 수집(GetShippingInfo)일 때 필요한 상태값 (PDF에는 없지만 필수)
+  // 주문 수집 관련 메소드(GetShippingInfo, GetShippingInfo_v3 등)는 stat 또는 ShippingStatus가 필요
   if (method.includes('GetShippingInfo')) {
-      bodyData.append('stat', '2'); // 배송요청 상태
+      // PDF 문서에 따르면 'stat'은 구버전 파라미터지만, v3에서도 호환성을 위해 보통 같이 보냅니다.
+      // 필요하다면 나중에 'ShippingStatus'로 바꿀 수도 있습니다. 일단 2(배송요청)로 보냅니다.
+      bodyData.append('stat', '2'); 
+      bodyData.append('ShippingStatus', '2'); // 신버전 대비용 (배송요청)
   }
 
   try {
@@ -49,7 +44,7 @@ export default async function handler(request) {
     const responseText = await response.text();
 
     if (responseText.includes('<html') || responseText.includes('Can\'t find')) {
-       throw new Error(`주소 오류: 큐텐 서버가 요청을 인식하지 못했습니다. (URL: ${targetUrl})`);
+       throw new Error(`주소 오류: 큐텐 서버가 '${method}' 기능을 찾지 못했습니다. (URL: ${targetUrl})`);
     }
 
     let data;

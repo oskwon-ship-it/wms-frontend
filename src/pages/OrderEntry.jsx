@@ -44,7 +44,7 @@ const OrderEntry = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // ★★★ 4. 큐텐 주문 가져오기 (PDF 분석 반영 완료)
+    // ★★★ 4. 큐텐 주문 가져오기 (PDF 문서 반영)
     const handleRealApiSync = async () => {
         if (!apiKey) {
             message.error('API Key를 입력해주세요!');
@@ -55,9 +55,10 @@ const OrderEntry = () => {
         try {
             message.loading(`Vercel 서버를 통해 ${apiRegion} 큐텐에 접속 중...`, 1);
 
-            // [핵심 수정] PDF 문서에 따라 'ShippingInfo' -> 'ShippingBasic'으로 변경
-            // ShippingBasic.GetShippingInfo가 큐텐의 표준 주문 수집 명령입니다.
-            const methodName = 'ShippingBasic.GetShippingInfo';
+            // [핵심 수정] PDF 문서의 '전체 Method 목록'에 따라 '_v3'를 붙였습니다.
+            // 구버전: ShippingBasic.GetShippingInfo (X - 존재하지 않음)
+            // 신버전: ShippingBasic.GetShippingInfo_v3 (O - PDF 확인됨)
+            const methodName = 'ShippingBasic.GetShippingInfo_v3';
 
             // 우리가 만든 api/qoo10.js 서버로 요청 전송
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
@@ -71,7 +72,7 @@ const OrderEntry = () => {
 
             // 큐텐 응답 결과 코드 확인 (0이 성공)
             if (jsonData.ResultCode !== 0) {
-                throw new Error(jsonData.ResultMsg || 'API 호출 실패 (키를 확인하거나, 주문이 없는 상태일 수 있습니다)');
+                throw new Error(jsonData.ResultMsg || 'API 호출 실패 (키 오류 또는 권한 문제)');
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
