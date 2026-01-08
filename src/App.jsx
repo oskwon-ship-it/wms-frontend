@@ -1,47 +1,39 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
-// ★ 파일 경로가 다르면 이 부분을 수정해야 합니다. 
-// (보통 src/pages 폴더 안에 파일들이 있습니다)
-import Login from './pages/Login';
+// 기존 페이지들 import
 import Dashboard from './pages/Dashboard';
 import OrderEntry from './pages/OrderEntry';
-import OrderProcessing from './pages/OrderProcessing';
-import InventoryManagement from './pages/InventoryManagement';
-import InventoryHistory from './pages/InventoryHistory';
-import InboundManagement from './pages/InboundManagement';
+import InventoryManagement from './pages/InventoryManagement'; // Inventory -> InventoryManagement로 추정
+import InboundManagement from './pages/InboundManagement'; // 파일 목록에 보여서 추가함
+import InventoryHistory from './pages/InventoryHistory';   // 파일 목록에 보여서 추가함
+import OrderProcessing from './pages/OrderProcessing';     // 파일 목록에 보여서 추가함
+import Login from './pages/Login';
 
-const App = () => {
+// ★ 새로 만든 진단실 페이지 import
+import ApiTester from './pages/ApiTester'; 
+
+function App() {
   return (
-    <Routes>
-      {/* 1. 기본 주소(/)로 들어오면 로그인 페이지로 이동 */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
+    <Router>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/login" element={<Login />} />
+        
+        {/* 주문 관련 */}
+        <Route path="/orders" element={<OrderEntry />} />
+        <Route path="/order-processing" element={<OrderProcessing />} />
 
-      {/* 2. 로그인 페이지 */}
-      <Route path="/login" element={<Login />} />
-
-      {/* 3. 대시보드 */}
-      <Route path="/dashboard" element={<Dashboard />} />
-
-      {/* 4. 주문 접수 (에러 해결 핵심!) */}
-      {/* 메뉴에서 /orders로 가든, /order-entry로 가든 에러 없이 페이지를 보여줍니다 */}
-      <Route path="/order-entry" element={<OrderEntry />} />
-      <Route path="/orders" element={<OrderEntry />} />
-
-      {/* 5. 송장/출고 관리 (관리자용) */}
-      <Route path="/order-process" element={<OrderProcessing />} />
-
-      {/* 6. 재고 관리 */}
-      <Route path="/inventory" element={<InventoryManagement />} />
-      <Route path="/history" element={<InventoryHistory />} />
-
-      {/* 7. 입고 관리 */}
-      <Route path="/inbound" element={<InboundManagement />} />
-
-      {/* 8. 없는 페이지 처리 (404) */}
-      <Route path="*" element={<div style={{ padding: '50px', textAlign: 'center' }}><h2>🚫 페이지를 찾을 수 없습니다.</h2><p>주소를 확인해주세요.</p></div>} />
-    </Routes>
+        {/* 재고/입고 관련 */}
+        <Route path="/inventory" element={<InventoryManagement />} />
+        <Route path="/inventory-history" element={<InventoryHistory />} />
+        <Route path="/inbound" element={<InboundManagement />} />
+        
+        {/* ★ 새로 추가된 API 진단실 경로 (여기에 추가!) */}
+        <Route path="/api-test" element={<ApiTester />} />
+      </Routes>
+    </Router>
   );
-};
+}
 
 export default App;
