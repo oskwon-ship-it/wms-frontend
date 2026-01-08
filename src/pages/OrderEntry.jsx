@@ -43,7 +43,7 @@ const OrderEntry = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // ★★★ [수정됨] 설정 파일 필요 없는 '만능 우회' 호출 방식
+    // ★★★ [수정됨] Vercel Serverless Function 사용 (가장 안정적)
     const handleRealApiSync = async () => {
         if (!apiKey) {
             message.error('API Key를 입력해주세요!');
@@ -52,27 +52,21 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`${apiRegion} 큐텐 서버에 접속 중...`, 1);
+            message.loading(`Vercel 서버를 통해 ${apiRegion} 큐텐에 접속 중...`, 1);
 
-            // 1. 큐텐 원본 주소 (Proxy Path 사용 안 함)
-            const baseUrl = apiRegion === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
-            const targetUrl = `${baseUrl}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=ShippingInfo.GetShippingInfo&stat=2`;
-
-            // 2. AllOrigins 우회 서버 사용 (설정 파일 없이 CORS 해결)
-            // 이 주소 뒤에 원본 주소를 붙이면 대신 갖다줍니다.
-            const bypassUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-            
-            const response = await fetch(bypassUrl);
+            // 1. 우리가 만든 'api/qoo10.js' 파일로 요청을 보냅니다.
+            // 내 컴퓨터(로컬)에서는 작동 안 할 수 있으니 꼭 '배포' 후 테스트하세요!
+            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=ShippingInfo.GetShippingInfo`);
             
             if (!response.ok) {
-                throw new Error(`서버 접속 오류: ${response.status}`);
+                const errData = await response.json();
+                throw new Error(errData.error || `서버 오류: ${response.status}`);
             }
 
             const jsonData = await response.json();
 
-            // 3. 큐텐 응답 확인
+            // 2. 큐텐 응답 확인
             if (jsonData.ResultCode !== 0) {
-                // 키가 틀렸거나 주문이 없을 때
                 throw new Error(jsonData.ResultMsg || 'API 호출 실패 (키를 확인하세요)');
             }
 
@@ -83,7 +77,7 @@ const OrderEntry = () => {
                 return;
             }
 
-            // 4. DB 저장
+            // 3. DB 저장
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
                 platform_order_id: String(item.PackNo),
@@ -188,8 +182,8 @@ const OrderEntry = () => {
             >
                 <div style={{display:'flex', flexDirection:'column', gap: 15}}>
                     <Alert 
-                        message="API 연동 준비 완료" 
-                        description="외부 우회 서버(AllOrigins)를 통해 안전하게 접속합니다." 
+                        message="나만의 전용 서버(API) 사용 중" 
+                        description="Vercel 서버를 통해 안정적으로 큐텐에 접속합니다." 
                         type="success" 
                         showIcon 
                         icon={<SafetyCertificateOutlined />}
