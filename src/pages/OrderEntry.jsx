@@ -29,7 +29,6 @@ const OrderEntry = () => {
 
     useEffect(() => { fetchOrders(); }, [activeTab]);
 
-    // ★★★ [강제 확인 함수]
     const handleRealApiSync = async () => {
         if (!apiKey) {
             alert('API Key를 입력해주세요!');
@@ -41,14 +40,64 @@ const OrderEntry = () => {
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
             const result = await response.json();
             
-            // 결과 내용을 500자까지만 잘라서 보여줍니다 (너무 길면 알림창이 안 뜰 수 있어서)
-            const textToShow = result.raw_text ? result.raw_text.substring(0, 600) : JSON.stringify(result);
+            // 1. 응답 텍스트를 JSON으로 변환 시도
+            let jsonData = null;
+            try {
+                jsonData = JSON.parse(result.raw_text);
+            } catch (e) {
+                // JSON이 아니면 에러 알림
+                alert("큐텐 응답이 JSON이 아닙니다:\n" + result.raw_text.substring(0, 200));
+                setLoading(false);
+                return;
+            }
+
+            // 2. 결과 코드 확인
+            if (jsonData.ResultCode !== 0) {
+                alert(`API 실패 (코드 ${jsonData.ResultCode}):\n${jsonData.ResultMsg}`);
+                setLoading(false);
+                return;
+            }
+
+            // 3. 주문 리스트 확보
+            const qoo10Orders = jsonData.ResultObject || [];
             
-            // ★★★ 무조건 뜹니다. 이 내용을 캡처해주세요! ★★★
-            alert("큐텐 응답 내용:\n\n" + textToShow);
+            // 4. "배송요청" 상태인 것만 필터링 (Status: 2)
+            // 큐텐은 Status 2가 '배송요청(결제완료)' 입니다.
+            const newOrders = qoo10Orders.filter(item => 
+                item.ShippingStatus === '2' || item.Status === '2' || item.ShippingStatus === '배송요청'
+            );
+
+            if (newOrders.length === 0) {
+                alert(`조회 성공! 하지만 신규 주문이 없습니다.\n(전체 조회된 건수: ${qoo10Orders.length}건)`);
+                setLoading(false);
+                return;
+            }
+
+            // 5. DB 저장
+            const formattedOrders = newOrders.map(item => ({
+                platform_name: 'Qoo10',
+                platform_order_id: String(item.PackNo),
+                order_number: String(item.OrderNo),
+                customer: item.ReceiverName || item.Receiver,
+                product: item.ItemTitle,
+                barcode: item.SellerItemCode || 'BARCODE-MISSING',
+                quantity: parseInt(item.OrderQty, 10),
+                country_code: apiRegion, 
+                status: '처리대기',
+                process_status: '접수',
+                shipping_type: '택배',
+                created_at: new Date()
+            }));
+
+            const { error } = await supabase.from('orders').insert(formattedOrders);
+            if (error) throw error;
+
+            alert(`성공! 총 ${formattedOrders.length}건의 주문을 가져왔습니다.`);
+            setIsApiModalVisible(false);
+            fetchOrders();
 
         } catch (error) {
-            alert("통신 에러:\n" + error.message);
+            alert("시스템 에러:\n" + error.message);
         } finally {
             setLoading(false);
         }
@@ -93,9 +142,9 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="데이터 강제 확인 모드" 
-                        description="버튼을 누르면 큐텐의 응답 원본이 알림창으로 뜹니다."
-                        type="info" 
+                        message="최후의 수단: 조건 없는 전체 조회" 
+                        description="일단 모든 주문을 가져온 뒤 화면에서 분류합니다."
+                        type="success" 
                         showIcon 
                         icon={<CheckCircleOutlined />}
                     />
