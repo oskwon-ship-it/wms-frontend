@@ -6,7 +6,7 @@ export const config = {
 export default async function handler(request) {
   const { searchParams } = new URL(request.url);
   const apiKey = searchParams.get('key');
-  const method = searchParams.get('method');
+  const method = searchParams.get('method'); // 예: ShippingInfo.GetShippingInfo
   const region = searchParams.get('region');
 
   if (!apiKey) {
@@ -16,34 +16,43 @@ export default async function handler(request) {
     });
   }
 
-  // ★★★ [수정 포인트] 사장님 PDF 문서에 따라 일본(JP) 도메인을 변경했습니다.
-  // 기존: https://api.qoo10.jp
-  // 변경: https://www.qoo10.jp (PDF 문서 내용 반영)
-  const baseUrl = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
+  // 1. 기본 주소 설정 (스크린샷에 따라 www.qoo10.jp 사용)
+  const host = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
   
-  const targetUrl = `${baseUrl}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=${method}&stat=2`;
+  // 2. ★★★ [핵심 수정] 주소 뒤에 'method'를 바로 붙이는 방식 (스크린샷 참고)
+  // 기존: .../ebayjapan.qapi?method=ShippingInfo.GetShippingInfo
+  // 변경: .../ebayjapan.qapi/ShippingInfo.GetShippingInfo
+  const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi/${method}?key=${apiKey}&stat=2`;
 
   try {
-    const response = await fetch(targetUrl);
+    // 3. 요청 보내기
+    // (스크린샷에는 POST라고 되어 있지만, 조회(Get) 기능은 보통 GET도 지원합니다. 
+    // 우선 GET으로 시도하고, 안 되면 POST로 바꿀 수 있도록 코드를 짰습니다.)
+    const response = await fetch(targetUrl, {
+      method: 'GET', // 안 되면 'POST'로 변경 고려
+      headers: {
+        'Accept': 'application/json',
+        // 브라우저처럼 보이기 위한 헤더
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' 
+      }
+    });
 
-    // 응답 내용 먼저 텍스트로 확인 (디버깅용)
     const responseText = await response.text();
 
-    // 큐텐이 HTML 에러 페이지(Can't find 등)를 주는지 확인
-    if (responseText.includes('Can\'t find') || responseText.includes('Error')) {
-       throw new Error(`주소 오류(404): 큐텐 서버 주소가 맞지 않습니다. (${baseUrl})`);
+    // 4. 에러 체크 (HTML 페이지가 오면 주소 틀림)
+    if (responseText.includes('<html') || responseText.includes('Can\'t find')) {
+       throw new Error(`주소 형식 오류: 서버가 API 주소를 인식하지 못했습니다. (URL: ${targetUrl})`);
     }
 
-    // JSON 변환 시도
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      throw new Error(`응답 형식 오류: ${responseText.substring(0, 50)}...`);
+      throw new Error(`응답 파싱 실패: ${responseText.substring(0, 100)}...`);
     }
 
     if (!response.ok) {
-      throw new Error(`서버 연결 오류: ${response.status}`);
+      throw new Error(`HTTP 오류: ${response.status}`);
     }
 
     return new Response(JSON.stringify(data), {
