@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { Layout, Menu, Button, theme } from 'antd';
+import { Layout, Menu, Button, theme, Modal } from 'antd'; // Modal 추가
 import { 
     MenuFoldOutlined, 
     MenuUnfoldOutlined, 
     DashboardOutlined, 
     OrderedListOutlined, 
     CodeSandboxOutlined, 
-    HistoryOutlined,     // 재고이력용 아이콘
-    ImportOutlined,      // 입고관리용 아이콘
-    RocketOutlined,      // 주문처리용 아이콘
-    ToolOutlined,        // ★ API 테스트용 공구 아이콘
+    HistoryOutlined,     
+    ImportOutlined,      
+    RocketOutlined,      
+    ToolOutlined,        
     LogoutOutlined 
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { supabase } from '../supabaseClient'; // ★ 로그아웃을 위해 필수!
 
 const { Header, Sider, Content } = Layout;
 
@@ -22,7 +23,21 @@ const AppLayout = ({ children }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // 메뉴 목록
+    // ★★★ [로그아웃 기능] 이게 빠져 있었습니다! 죄송합니다! ★★★
+    const handleLogout = async () => {
+        Modal.confirm({
+            title: '로그아웃',
+            content: '정말 시스템에서 나가시겠습니까?',
+            okText: '나가기',
+            cancelText: '취소',
+            okType: 'danger',
+            onOk: async () => {
+                await supabase.auth.signOut(); // 1. 수파베이스 서버에 로그아웃 요청
+                // App.jsx가 "어? 세션 없어졌네?" 하고 감지해서 자동으로 로그인 창을 띄웁니다.
+            }
+        });
+    };
+
     const items = [
         {
             key: '/',
@@ -54,13 +69,12 @@ const AppLayout = ({ children }) => {
             icon: <HistoryOutlined />,
             label: '재고 수불부',
         },
-        // --- 구분선 및 API 테스트 메뉴 추가 ---
         {
             type: 'divider', 
         },
         {
             key: '/api-test',
-            icon: <ToolOutlined style={{ color: '#faad14' }} />, // 눈에 띄게 노란색
+            icon: <ToolOutlined style={{ color: '#faad14' }} />, 
             label: 'API 연동 테스트',
         },
     ];
@@ -109,7 +123,15 @@ const AppLayout = ({ children }) => {
                     />
                     <div style={{display:'flex', gap: 15, alignItems:'center'}}>
                         <span style={{color: '#666'}}>마이커머스 님</span>
-                        <Button icon={<LogoutOutlined />} danger size="small">나가기</Button>
+                        {/* ★★★ 여기에 onClick 이벤트를 연결했습니다! ★★★ */}
+                        <Button 
+                            icon={<LogoutOutlined />} 
+                            danger 
+                            size="small" 
+                            onClick={handleLogout} // 클릭하면 로그아웃 실행
+                        >
+                            나가기
+                        </Button>
                     </div>
                 </Header>
                 <Content
