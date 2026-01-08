@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Select, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, CheckCircleOutlined, CodeOutlined 
+    KeyOutlined, FileTextOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -13,6 +13,9 @@ const OrderEntry = () => {
     const [activeTab, setActiveTab] = useState('new'); 
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
+    
+    // ★★★ [서버 응답 원본을 담을 공간]
+    const [rawResponse, setRawResponse] = useState('');
 
     const fetchOrders = async () => {
         setLoading(true);
@@ -28,85 +31,37 @@ const OrderEntry = () => {
     useEffect(() => { fetchOrders(); }, [activeTab]);
 
     const handleRealApiSync = async () => {
+        // 1. 살아있니? 확인용 알림
+        alert("서버에 데이터 요청을 시작합니다!");
+
         if (!apiKey) {
             alert('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        message.loading("데이터 포장을 뜯는 중...", 1);
+        setRawResponse('데이터를 받아오는 중입니다...'); // 화면 갱신
 
         try {
             const response = await fetch(`/api/qoo10?key=${apiKey}`);
             const jsonData = await response.json();
 
-            // 1. 데이터 평탄화 (상자 안에 상자 다 꺼내기)
-            let allItems = [];
-            const rawData = jsonData.data;
+            // 2. 받은 데이터를 글자로 변환 (예쁘게)
+            const jsonString = JSON.stringify(jsonData, null, 2);
+            
+            // 3. 화면에 뿌리기
+            setRawResponse(jsonString);
 
-            if (Array.isArray(rawData)) {
-                // [[...], [...]] 구조를 [...] 로 폄
-                allItems = rawData.flat(Infinity);
-            } else if (rawData && rawData.ResultObject) {
-                allItems = rawData.ResultObject;
-            }
-
-            // 2. 유효한 주문 찾기 (OrderNo가 있는 것만)
-            const validOrders = allItems.filter(item => item && (item.OrderNo || item.orderNo || item.PACK_NO));
-
-            if (validOrders.length === 0) {
-                Modal.warning({
-                    title: '데이터 없음',
-                    content: '연결은 성공했으나, 안에 든 주문 데이터가 없습니다. (기간 내 판매 없음)'
-                });
+            // 4. 데이터가 진짜 있는지 살짝 확인
+            if (jsonString.includes("OrderNo") || jsonString.includes("PackNo")) {
+                message.success("오! 주문 데이터가 보입니다!");
             } else {
-                // 3. ★★★ 첫 번째 주문 샘플 확인 ★★★
-                const sample = validOrders[0];
-                console.log("주문 샘플:", sample);
-
-                Modal.info({
-                    title: '📦 데이터 포장 해제 성공!',
-                    width: 600,
-                    content: (
-                        <div>
-                            <p>주문 <b>{validOrders.length}건</b>을 찾았습니다!</p>
-                            <p>첫 번째 주문의 데이터 구조(이름표)는 아래와 같습니다:</p>
-                            <pre style={{background:'#333', color:'#fff', padding:10, borderRadius:5, fontSize:11, maxHeight:300, overflow:'auto'}}>
-                                {JSON.stringify(sample, null, 2)}
-                            </pre>
-                            <p style={{marginTop:10, fontWeight:'bold', color:'blue'}}>
-                                * 위 내용을 캡처해서 보여주세요. <br/>
-                                (OrderNo인지, PackNo인지 정확한 이름만 알면 저장됩니다!)
-                            </p>
-                        </div>
-                    ),
-                    okText: "확인 완료"
-                });
-                
-                // 일단 저장 시도는 해봅니다 (표준 필드명 기준)
-                const formattedOrders = validOrders.map(item => ({
-                    platform_name: 'Qoo10',
-                    platform_order_id: String(item.PackNo || item.PACK_NO || item.OrderNo),
-                    order_number: String(item.OrderNo || item.ORDER_NO),
-                    customer: item.ReceiverName || item.Receiver || item.Buyer || '고객',
-                    product: item.ItemTitle || item.ItemName,
-                    barcode: item.SellerItemCode || 'BARCODE-MISSING',
-                    quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
-                    country_code: 'JP', 
-                    status: '처리대기',
-                    process_status: '접수',
-                    shipping_type: '택배',
-                    created_at: new Date()
-                }));
-                
-                // 에러 무시하고 일단 넣기 (성공하면 목록에 뜸)
-                await supabase.from('orders').insert(formattedOrders);
-                fetchOrders();
+                message.warning("연결은 됐는데 주문이 안 보이네요...");
             }
-            setIsApiModalVisible(false);
 
         } catch (error) {
-            alert(`처리 실패: ${error.message}`);
+            setRawResponse(`에러 발생: ${error.message}`);
+            alert(`통신 에러: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -148,17 +103,35 @@ const OrderEntry = () => {
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} type="card" />
             <Table rowSelection={{ type: 'checkbox' }} columns={columns} dataSource={orders} rowKey="id" loading={loading} />
             
-            <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
-                <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
+            <Modal 
+                title="큐텐 데이터 원본 확인" 
+                open={isApiModalVisible} 
+                onCancel={() => setIsApiModalVisible(false)} 
+                footer={null}
+                width={800} // 창을 넓게
+            >
+                <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '10px 0'}}>
                     <Alert 
-                        message="데이터 확인 모드" 
-                        description="큐텐이 보내준 데이터의 '진짜 이름표'를 확인합니다."
+                        message="원본 데이터 뷰어" 
+                        description="서버가 보낸 데이터를 가공 없이 그대로 보여줍니다."
                         type="info" 
                         showIcon 
-                        icon={<CodeOutlined />}
+                        icon={<FileTextOutlined />}
                     />
+                    
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
+                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>데이터 가져오기 (Raw)</Button>
+
+                    <p style={{fontWeight:'bold', marginTop:10}}>▼ 서버 응답 결과:</p>
+                    
+                    {/* ★★★ 여기에 데이터가 텍스트로 뜹니다 ★★★ */}
+                    <Input.TextArea 
+                        rows={15} 
+                        value={rawResponse} 
+                        placeholder="버튼을 누르면 여기에 데이터가 표시됩니다."
+                        style={{fontFamily: 'monospace', backgroundColor: '#333', color: '#0f0'}} // 해커 스타일(검은 배경, 초록 글씨)로 잘 보이게
+                        readOnly
+                    />
                 </div>
             </Modal>
         </AppLayout>
