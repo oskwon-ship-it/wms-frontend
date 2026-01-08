@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Select, Alert } from 'antd';
+import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, FileTextOutlined 
+    KeyOutlined, CheckCircleOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -13,9 +13,6 @@ const OrderEntry = () => {
     const [activeTab, setActiveTab] = useState('new'); 
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
-    
-    // ★★★ [서버 응답 원본을 담을 공간]
-    const [rawResponse, setRawResponse] = useState('');
 
     const fetchOrders = async () => {
         setLoading(true);
@@ -31,37 +28,74 @@ const OrderEntry = () => {
     useEffect(() => { fetchOrders(); }, [activeTab]);
 
     const handleRealApiSync = async () => {
-        // 1. 살아있니? 확인용 알림
-        alert("서버에 데이터 요청을 시작합니다!");
-
         if (!apiKey) {
-            alert('API Key를 입력해주세요!');
+            message.warning('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        setRawResponse('데이터를 받아오는 중입니다...'); // 화면 갱신
+        message.loading("큐텐 주문을 가져오는 중...", 1);
 
         try {
             const response = await fetch(`/api/qoo10?key=${apiKey}`);
             const jsonData = await response.json();
 
-            // 2. 받은 데이터를 글자로 변환 (예쁘게)
-            const jsonString = JSON.stringify(jsonData, null, 2);
-            
-            // 3. 화면에 뿌리기
-            setRawResponse(jsonString);
-
-            // 4. 데이터가 진짜 있는지 살짝 확인
-            if (jsonString.includes("OrderNo") || jsonString.includes("PackNo")) {
-                message.success("오! 주문 데이터가 보입니다!");
-            } else {
-                message.warning("연결은 됐는데 주문이 안 보이네요...");
+            // 1. 에러 체크
+            if (jsonData.data && jsonData.data.ResultCode && jsonData.data.ResultCode < 0) {
+                 Modal.error({
+                    title: 'API 오류',
+                    content: `코드: ${jsonData.data.ResultCode}\n메시지: ${jsonData.data.ResultMsg}`
+                });
+                setLoading(false);
+                return;
             }
 
+            // 2. 데이터 구조 평탄화 (복잡한 괄호 제거)
+            let qoo10Orders = [];
+            const rawData = jsonData.data;
+
+            if (rawData.ResultObject) {
+                qoo10Orders = rawData.ResultObject;
+            } else if (Array.isArray(rawData)) {
+                // [[[]]] 같은 구조를 한 방에 폄
+                qoo10Orders = rawData.flat(Infinity).filter(item => item && (item.OrderNo || item.PackNo));
+            }
+
+            // 3. 결과 처리
+            if (qoo10Orders.length === 0) {
+                Modal.info({
+                    title: '연동 성공 ✅',
+                    content: 'API 연결에 성공했습니다! 다만, 최근 30일간 조회된 주문 내역이 없습니다.'
+                });
+            } else {
+                // 4. DB 저장
+                const formattedOrders = qoo10Orders.map(item => ({
+                    platform_name: 'Qoo10',
+                    platform_order_id: String(item.PackNo || item.OrderNo),
+                    order_number: String(item.OrderNo),
+                    customer: item.ReceiverName || item.Receiver || '고객',
+                    product: item.ItemTitle || item.ItemName,
+                    barcode: item.SellerItemCode || 'BARCODE-MISSING',
+                    quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
+                    country_code: 'JP', 
+                    status: '처리대기',
+                    process_status: '접수',
+                    shipping_type: '택배',
+                    created_at: new Date()
+                }));
+                
+                await supabase.from('orders').insert(formattedOrders);
+                
+                Modal.success({
+                    title: '주문 수집 완료 🎉',
+                    content: `총 ${formattedOrders.length}건의 주문을 성공적으로 가져왔습니다!`
+                });
+                fetchOrders(); // 목록 새로고침
+            }
+            setIsApiModalVisible(false);
+
         } catch (error) {
-            setRawResponse(`에러 발생: ${error.message}`);
-            alert(`통신 에러: ${error.message}`);
+            message.error(`시스템 에러: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -103,35 +137,17 @@ const OrderEntry = () => {
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} type="card" />
             <Table rowSelection={{ type: 'checkbox' }} columns={columns} dataSource={orders} rowKey="id" loading={loading} />
             
-            <Modal 
-                title="큐텐 데이터 원본 확인" 
-                open={isApiModalVisible} 
-                onCancel={() => setIsApiModalVisible(false)} 
-                footer={null}
-                width={800} // 창을 넓게
-            >
-                <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '10px 0'}}>
+            <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
+                <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="원본 데이터 뷰어" 
-                        description="서버가 보낸 데이터를 가공 없이 그대로 보여줍니다."
-                        type="info" 
+                        message="API 연결 성공" 
+                        description="이제 버튼만 누르면 최근 30일 주문을 자동으로 가져옵니다."
+                        type="success" 
                         showIcon 
-                        icon={<FileTextOutlined />}
+                        icon={<CheckCircleOutlined />}
                     />
-                    
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>데이터 가져오기 (Raw)</Button>
-
-                    <p style={{fontWeight:'bold', marginTop:10}}>▼ 서버 응답 결과:</p>
-                    
-                    {/* ★★★ 여기에 데이터가 텍스트로 뜹니다 ★★★ */}
-                    <Input.TextArea 
-                        rows={15} 
-                        value={rawResponse} 
-                        placeholder="버튼을 누르면 여기에 데이터가 표시됩니다."
-                        style={{fontFamily: 'monospace', backgroundColor: '#333', color: '#0f0'}} // 해커 스타일(검은 배경, 초록 글씨)로 잘 보이게
-                        readOnly
-                    />
+                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
             </Modal>
         </AppLayout>
