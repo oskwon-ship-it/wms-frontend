@@ -27,38 +27,76 @@ const OrderEntry = () => {
 
     useEffect(() => { fetchOrders(); }, [activeTab]);
 
-    // ★★★ [초고속 직통 테스트 함수]
     const handleRealApiSync = async () => {
         if (!apiKey) {
-            alert('API Key를 입력해주세요!');
+            message.error('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        message.loading("큐텐 서버 접속 중...", 1);
+        message.loading("큐텐 주문 수집 중... (성공 확신!)", 1);
 
         try {
-            // 5초 안에 응답 없으면 프론트엔드에서 끊어버림
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const response = await fetch(`/api/qoo10?key=${apiKey}`);
+            const jsonData = await response.json();
 
-            const response = await fetch(`/api/qoo10?key=${apiKey}`, { signal: controller.signal });
-            clearTimeout(timeoutId);
+            // 에러 체크 (ResultCode가 -xxxx 인 경우)
+            if (jsonData.data && jsonData.data.ResultCode && jsonData.data.ResultCode < 0) {
+                 Modal.error({
+                    title: 'API 오류',
+                    content: `코드: ${jsonData.data.ResultCode}, 메시지: ${jsonData.data.ResultMsg}`
+                });
+                setLoading(false);
+                return;
+            }
 
-            const result = await response.json();
-            
-            // 결과 내용을 500자까지만 잘라서 보여줍니다
-            const textToShow = result.raw_text ? result.raw_text.substring(0, 500) : JSON.stringify(result);
-            
-            // ★★★ 무조건 뜹니다! 캡처해주세요! ★★★
-            alert("큐텐 서버 응답:\n\n" + textToShow);
+            // 성공! 데이터 파싱
+            // 큐텐은 배열 구조가 복잡하게 올 수 있어서 안전하게 처리합니다.
+            let qoo10Orders = [];
+            const rawData = jsonData.data;
+
+            // 데이터가 ResultObject 안에 있거나, 배열 그 자체일 수 있음
+            if (rawData.ResultObject) {
+                qoo10Orders = rawData.ResultObject;
+            } else if (Array.isArray(rawData)) {
+                // 아까 보신 [[[]]] 같은 구조를 평탄화
+                qoo10Orders = rawData.flat(Infinity).filter(item => item && item.OrderNo);
+            }
+
+            if (qoo10Orders.length === 0) {
+                Modal.info({
+                    title: '연동 성공!',
+                    content: 'API 연결에 성공했습니다! 다만 현재 조회 기간(최근 7일) 내에 판매 내역이 없습니다.'
+                });
+            } else {
+                Modal.success({
+                    title: '주문 수집 성공!',
+                    content: `총 ${qoo10Orders.length}건의 주문을 가져왔습니다.`
+                });
+                
+                // DB 저장 로직
+                const formattedOrders = qoo10Orders.map(item => ({
+                    platform_name: 'Qoo10',
+                    platform_order_id: String(item.PackNo),
+                    order_number: String(item.OrderNo),
+                    customer: item.ReceiverName || item.Receiver || '고객',
+                    product: item.ItemTitle,
+                    barcode: item.SellerItemCode || 'BARCODE-MISSING',
+                    quantity: parseInt(item.OrderQty || 1, 10),
+                    country_code: 'JP', 
+                    status: '처리대기',
+                    process_status: '접수',
+                    shipping_type: '택배',
+                    created_at: new Date()
+                }));
+                
+                await supabase.from('orders').insert(formattedOrders);
+                fetchOrders();
+            }
+            setIsApiModalVisible(false);
 
         } catch (error) {
-            if (error.name === 'AbortError') {
-                alert("시간 초과! 큐텐 서버가 응답하지 않습니다.");
-            } else {
-                alert("통신 에러:\n" + error.message);
-            }
+            message.error(`처리 실패: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -103,14 +141,14 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="PDF 주소 직통 테스트" 
-                        description="PDF에 나온 주소(www.qoo10.jp)로 판매내역을 조회합니다."
+                        message="API 설정 완료" 
+                        description="테스트 폼에서 검증된 파라미터(Search_Sdate 등)로 접속합니다."
                         type="success" 
                         showIcon 
                         icon={<CheckCircleOutlined />}
                     />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>연동 테스트 시작</Button>
+                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
             </Modal>
         </AppLayout>

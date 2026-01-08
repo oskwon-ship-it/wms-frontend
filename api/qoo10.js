@@ -1,5 +1,5 @@
 export const config = {
-  runtime: 'edge', // 빠른 속도를 위해 엣지 런타임 사용
+  runtime: 'edge',
 };
 
 export default async function handler(request) {
@@ -10,10 +10,10 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ result: 'API Key 없음' }), { status: 400 });
   }
 
-  // 1. 날짜 설정 (YYYYMMDD) - 판매내역조회
+  // 1. 날짜 설정 (YYYYMMDD) - 테스트 폼과 동일하게
   const now = new Date();
   const past = new Date();
-  past.setDate(now.getDate() - 7); 
+  past.setDate(now.getDate() - 7); // 7일 전
 
   const formatDate = (date) => {
     const y = date.getFullYear();
@@ -25,57 +25,48 @@ export default async function handler(request) {
   const sDate = formatDate(past);
   const eDate = formatDate(now);
 
-  // 2. ★ PDF에 적힌 바로 그 주소 (www.qoo10.jp)
-  const targetUrl = 'https://www.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi';
-  
-  // 혹시 몰라 예비용 표준 주소도 준비 (api.qoo10.jp)
-  const backupUrl = 'https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi';
+  // 2. 타겟 URL: 일본 API 서버 (api.qoo10.jp)
+  // 테스트 폼이 성공했으므로 JP가 확실합니다.
+  const targetUrl = 'https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi';
 
+  // 3. 파라미터 조립 (테스트 폼에서 성공한 값 그대로!)
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
   bodyData.append('method', 'ShippingBasic.GetSellingReportDetailList'); // 판매내역조회
+  
+  // ★★★ [가장 중요] 밑줄(_)이 들어간 파라미터 이름! ★★★
   bodyData.append('SearchCondition', '1');
-  bodyData.append('Currency', 'JPY');
-  bodyData.append('SearchSdate', sDate);
-  bodyData.append('SearchEdate', eDate);
-
-  // 3. 접속 시도 함수 (5초 타임아웃 제한)
-  const fetchWithTimeout = async (url) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 5000); // 5초 제한
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
-        },
-        body: bodyData.toString(),
-        signal: controller.signal
-      });
-      clearTimeout(id);
-      return await response.text();
-    } catch (error) {
-      clearTimeout(id);
-      return `Error: ${error.message}`;
-    }
-  };
+  bodyData.append('Search_Sdate', sDate); // SearchSdate (X) -> Search_Sdate (O)
+  bodyData.append('Search_Edate', eDate); // SearchEdate (X) -> Search_Edate (O)
+  bodyData.append('Currency', 'JPY');      // 이것도 필수
 
   try {
-    // 4. PDF 주소로 먼저 시도
-    let rawText = await fetchWithTimeout(targetUrl);
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
+      },
+      body: bodyData.toString()
+    });
 
-    // 실패하거나 HTML(차단) 응답이면 표준 주소(api)로 재시도
-    if (rawText.includes('Error') || rawText.includes('<html')) {
-        rawText = await fetchWithTimeout(backupUrl);
+    const text = await response.text();
+    let json;
+
+    try {
+        json = JSON.parse(text);
+    } catch (e) {
+        return new Response(JSON.stringify({ 
+            error: "JSON 파싱 실패", 
+            raw_text: text.substring(0, 200) 
+        }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // 5. 결과 반환 (무조건 텍스트로)
+    // 성공 시 ResultCode가 없을 수도 있습니다 (빈 배열 등).
+    // 데이터 구조를 확인하기 위해 원본을 그대로 보냅니다.
     return new Response(JSON.stringify({
-        status: 200,
-        target_used: targetUrl,
-        raw_text: rawText
+        status: "success",
+        data: json 
     }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
