@@ -4,7 +4,8 @@ import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Moda
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
     ShoppingCartOutlined, FileExcelOutlined,
-    KeyOutlined, CheckCircleOutlined 
+    KeyOutlined, SafetyCertificateOutlined,
+    GlobalOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -14,7 +15,7 @@ const OrderEntry = () => {
     const [activeTab, setActiveTab] = useState('new'); 
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
-    const [apiRegion, setApiRegion] = useState('JP'); 
+    const [apiRegion, setApiRegion] = useState('JP'); // 기본값 JP지만 서버가 알아서 다 테스트함
 
     const fetchOrders = async () => {
         setLoading(true);
@@ -31,50 +32,38 @@ const OrderEntry = () => {
 
     const handleRealApiSync = async () => {
         if (!apiKey) {
-            alert('API Key를 입력해주세요!');
+            message.error('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
         try {
+            message.loading(`큐텐 서버와 통신 중... (JP/SG 자동 탐색)`, 1);
+
+            // region 파라미터는 이제 장식입니다. 서버가 알아서 다 찔러봅니다.
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
-            const result = await response.json();
-            
-            // 1. 응답 텍스트를 JSON으로 변환 시도
-            let jsonData = null;
-            try {
-                jsonData = JSON.parse(result.raw_text);
-            } catch (e) {
-                // JSON이 아니면 에러 알림
-                alert("큐텐 응답이 JSON이 아닙니다:\n" + result.raw_text.substring(0, 200));
-                setLoading(false);
-                return;
-            }
+            const jsonData = await response.json();
 
-            // 2. 결과 코드 확인
+            // 에러 체크
             if (jsonData.ResultCode !== 0) {
-                alert(`API 실패 (코드 ${jsonData.ResultCode}):\n${jsonData.ResultMsg}`);
+                // 실패 메시지 표시
+                Modal.error({
+                    title: '연동 실패',
+                    content: `큐텐 서버 응답: ${jsonData.ResultMsg} (Code: ${jsonData.ResultCode})`
+                });
                 setLoading(false);
                 return;
             }
 
-            // 3. 주문 리스트 확보
             const qoo10Orders = jsonData.ResultObject || [];
             
-            // 4. "배송요청" 상태인 것만 필터링 (Status: 2)
-            // 큐텐은 Status 2가 '배송요청(결제완료)' 입니다.
-            const newOrders = qoo10Orders.filter(item => 
-                item.ShippingStatus === '2' || item.Status === '2' || item.ShippingStatus === '배송요청'
-            );
-
-            if (newOrders.length === 0) {
-                alert(`조회 성공! 하지만 신규 주문이 없습니다.\n(전체 조회된 건수: ${qoo10Orders.length}건)`);
+            if (!qoo10Orders || qoo10Orders.length === 0) {
+                message.info('최근 5일간 신규 주문(배송요청)이 없습니다.');
                 setLoading(false);
                 return;
             }
 
-            // 5. DB 저장
-            const formattedOrders = newOrders.map(item => ({
+            const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
                 platform_order_id: String(item.PackNo),
                 order_number: String(item.OrderNo),
@@ -92,12 +81,13 @@ const OrderEntry = () => {
             const { error } = await supabase.from('orders').insert(formattedOrders);
             if (error) throw error;
 
-            alert(`성공! 총 ${formattedOrders.length}건의 주문을 가져왔습니다.`);
+            message.success(`성공! ${formattedOrders.length}건을 저장했습니다.`);
             setIsApiModalVisible(false);
             fetchOrders();
 
         } catch (error) {
-            alert("시스템 에러:\n" + error.message);
+            console.error('API Error:', error);
+            message.error(`통신 오류: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -142,13 +132,26 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="최후의 수단: 조건 없는 전체 조회" 
-                        description="일단 모든 주문을 가져온 뒤 화면에서 분류합니다."
+                        message="API 자동 연결" 
+                        description="일본(JP)과 싱가포르(SG) 서버를 자동으로 탐색합니다."
                         type="success" 
                         showIcon 
-                        icon={<CheckCircleOutlined />}
+                        icon={<SafetyCertificateOutlined />}
                     />
-                    <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+                    
+                    <div>
+                        <label style={{fontWeight:'bold', display:'block', marginBottom: 5}}>API Key 입력</label>
+                        <Input.Password 
+                            prefix={<KeyOutlined />} 
+                            placeholder="QSM에서 발급받은 API Key를 붙여넣으세요" 
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                        />
+                        <div style={{fontSize: 12, color: '#999', marginTop: 5}}>
+                            * 국가 선택 불필요 (자동 감지)
+                        </div>
+                    </div>
+                    
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
             </Modal>
