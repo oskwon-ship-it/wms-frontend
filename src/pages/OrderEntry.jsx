@@ -34,35 +34,48 @@ const OrderEntry = () => {
         }
 
         setLoading(true);
-        message.loading("성공했던 방식(v1)으로 접속 중...", 1);
+        message.loading("큐텐 서버 조회 중...", 1);
 
         try {
             const response = await fetch(`/api/qoo10?key=${encodeURIComponent(apiKey)}`);
             const jsonData = await response.json();
 
+            // 1. 서버 통신 에러 체크
             if (jsonData.error) {
-                alert(`에러: ${jsonData.error}\n${jsonData.details || ''}`);
+                alert(`통신 오류:\n${jsonData.error}`);
                 setLoading(false);
                 return;
             }
 
             const apiResult = jsonData.data;
-            
-            // ResultCode 0 = 성공
-            if (apiResult.ResultCode === 0 || apiResult.ResultCode === -10001) { // -10001이 뜨더라도 연결은 된 것임
+            const resultCode = apiResult.ResultCode;
+
+            // 2. 결과 처리 (성공 or 데이터 없음)
+            if (resultCode === 0 || resultCode === -10001) { 
                 
-                // 데이터 추출 시도
                 let qoo10Orders = [];
                 if (apiResult.ResultObject) {
                     qoo10Orders = Array.isArray(apiResult.ResultObject) ? apiResult.ResultObject : [apiResult.ResultObject];
                 }
 
-                if (apiResult.ResultCode === 0 && (!qoo10Orders || qoo10Orders.length === 0)) {
-                    Modal.success({
-                        title: '연결 성공! (주문 없음)',
-                        content: '서버와 정상적으로 연결되었습니다!\n현재 배송요청 상태인 주문이 없습니다.'
+                if (!qoo10Orders || qoo10Orders.length === 0) {
+                    // ★★★ 여기가 핵심! 0건일 때 절대 그냥 닫지 않음 ★★★
+                    Modal.info({
+                        title: '연동 성공 (주문 0건)',
+                        content: (
+                            <div>
+                                <p><b>서버와 정상적으로 연결되었습니다!</b></p>
+                                <p>하지만 조회 기간(최근 45일) 내에 <b>'배송요청(신규)'</b> 상태인 주문이 없습니다.</p>
+                                <div style={{background:'#eee', padding:10, marginTop:10, borderRadius:5, fontSize:12}}>
+                                    <b>서버 응답 메시지:</b><br/>
+                                    {apiResult.ResultMsg || "메시지 없음"}
+                                </div>
+                            </div>
+                        ),
+                        onOk: () => setIsApiModalVisible(false) // 확인 버튼 눌러야 닫힘
                     });
-                } else if (qoo10Orders.length > 0) {
+                } else {
+                    // 주문이 있을 때
                      const formattedOrders = qoo10Orders.map(item => ({
                         platform_name: 'Qoo10',
                         platform_order_id: String(item.PackNo || item.OrderNo),
@@ -83,24 +96,18 @@ const OrderEntry = () => {
                     await supabase.from('orders').insert(formattedOrders);
                     
                     Modal.success({
-                        title: '주문 수집 성공! 🎉',
-                        content: `총 ${formattedOrders.length}건을 가져왔습니다.`
-                    });
-                    fetchOrders();
-                } else {
-                    // 혹시 실패 메시지가 왔을 경우
-                     Modal.warning({
-                        title: '연결은 됐으나...',
-                        content: `큐텐 응답: ${apiResult.ResultMsg} (Code: ${apiResult.ResultCode})`
+                        title: `🎉 ${formattedOrders.length}건 수집 완료!`,
+                        content: '주문 목록을 갱신합니다.',
+                        onOk: () => {
+                            setIsApiModalVisible(false);
+                            fetchOrders();
+                        }
                     });
                 }
-                setIsApiModalVisible(false);
 
             } else {
-                 Modal.error({
-                    title: '큐텐 거절',
-                    content: `코드: ${apiResult.ResultCode}\n메시지: ${apiResult.ResultMsg}`
-                });
+                // 키 오류 등 명확한 실패
+                 alert(`큐텐 거절 (Code ${resultCode}):\n${apiResult.ResultMsg}`);
             }
 
         } catch (error) {
@@ -149,8 +156,8 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="성공했던 방식 (v1) 복구" 
-                        description="api.qoo10.jp 서버에 구형 파라미터(Search_Sdate)로 접속합니다."
+                        message="v1 접속 방식 (확인사살 모드)" 
+                        description="주문이 0건이어도 결과를 팝업으로 띄워줍니다."
                         type="success" 
                         showIcon 
                         icon={<HistoryOutlined />}
