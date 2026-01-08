@@ -4,8 +4,7 @@ import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Moda
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
     ShoppingCartOutlined, FileExcelOutlined,
-    KeyOutlined, SafetyCertificateOutlined,
-    GlobalOutlined, CheckCircleOutlined 
+    KeyOutlined, CheckCircleOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -30,42 +29,27 @@ const OrderEntry = () => {
 
     useEffect(() => { fetchOrders(); }, [activeTab]);
 
+    // ★★★ [강제 확인 함수]
     const handleRealApiSync = async () => {
         if (!apiKey) {
-            message.error('API Key를 입력해주세요!');
+            alert('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
         try {
-            message.loading(`큐텐(${apiRegion}) 서버 응답 분석 중...`, 1);
-
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
-            const jsonData = await response.json();
-
-            // ★★★ 서버 응답 원본 확인 팝업 ★★★
-            // 이 팝업 내용을 캡처해서 보여주시면 바로 코드를 완성할 수 있습니다.
-            Modal.info({
-                title: '서버 응답 데이터 확인',
-                width: 600,
-                content: (
-                    <div style={{maxHeight: '400px', overflow: 'auto'}}>
-                        <p>큐텐 서버가 보낸 원본 데이터입니다:</p>
-                        <pre style={{background:'#333', color:'#fff', padding:10, borderRadius:5, fontSize:11}}>
-                            {JSON.stringify(jsonData.raw_data, null, 2)}
-                        </pre>
-                        <p style={{marginTop:10}}>* 위 내용을 캡처하거나 복사해서 알려주세요!</p>
-                    </div>
-                ),
-                onOk: () => {}
-            });
-
-            // 일단 성공 처리 (데이터 분석이 우선이므로)
-            setLoading(false);
+            const result = await response.json();
+            
+            // 결과 내용을 500자까지만 잘라서 보여줍니다 (너무 길면 알림창이 안 뜰 수 있어서)
+            const textToShow = result.raw_text ? result.raw_text.substring(0, 600) : JSON.stringify(result);
+            
+            // ★★★ 무조건 뜹니다. 이 내용을 캡처해주세요! ★★★
+            alert("큐텐 응답 내용:\n\n" + textToShow);
 
         } catch (error) {
-            console.error('API Error:', error);
-            message.error(`통신 실패: ${error.message}`);
+            alert("통신 에러:\n" + error.message);
+        } finally {
             setLoading(false);
         }
     };
@@ -109,8 +93,8 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="판매내역조회(SellingReport) 분석 모드" 
-                        description="날짜 에러가 없는 이 방식으로 데이터를 직접 확인합니다."
+                        message="데이터 강제 확인 모드" 
+                        description="버튼을 누르면 큐텐의 응답 원본이 알림창으로 뜹니다."
                         type="info" 
                         showIcon 
                         icon={<CheckCircleOutlined />}
