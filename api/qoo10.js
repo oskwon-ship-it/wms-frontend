@@ -71,16 +71,19 @@ export default async function handler(request) {
         }
 
         if (method.includes('Shipping')) {
-            // ★★★ [핵심 수정] "검색 기준" 추가 (이게 없어서 에러가 났습니다!)
+            // ★★★ [이번에 추가된 핵심 코드] ★★★
+            // 이 부분이 없어서 아까 "날짜 확인해달라"는 에러가 뜬 것입니다.
             // 1: 주문일, 2: 결제일, 3: 배송일
-            params.append('search_condition', '2'); // '결제일' 기준으로 조회 (가장 안전)
+            params.append('search_condition', '2'); // 결제일 기준 조회
+            params.append('SearchCondition', '2');  // (대문자 버전 보험용)
+
             params.append('stat', '2');             // 배송요청 상태
 
             // 날짜 파라미터 (큐텐 표준)
             params.append('search_sdate', sDate);
             params.append('search_edate', eDate);
             
-            // 혹시 몰라 대문자 버전도 같이 보냄 (보험용)
+            // 대문자 버전 (보험용)
             params.append('SearchSdate', sDate);
             params.append('SearchEdate', eDate);
         }
