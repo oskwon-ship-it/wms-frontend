@@ -15,15 +15,14 @@ export default async function handler(request) {
     });
   }
 
-  // 1. [핵심 변경] 배송/주문 관련은 구형 서버(api.qoo10.jp)가 정석입니다.
-  // www.qoo10.jp는 최신 기능(CS 등) 전용일 수 있습니다.
-  const host = region === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
+  // 1. 도메인 설정: PDF 문서대로 www.qoo10.jp 사용 (가장 중요!)
+  const host = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
   
-  // 2. [핵심 변경] 주소 뒤에 함수명을 붙이지 않고, 기본 주소만 씁니다.
-  // (함수명은 Body에 넣어서 보냅니다)
+  // 2. URL 설정: 함수명을 주소 뒤에 붙이지 않고, 기본 주소만 씁니다.
+  // (이전의 'Can't find' 에러는 주소 뒤에 함수명을 붙여서 발생한 것입니다)
   const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi`;
 
-  // 3. 데이터를 Body에 모두 담습니다. (POST 전송)
+  // 3. 데이터 설정: POST Body에 모든 정보를 담습니다.
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
   bodyData.append('method', method); // 예: ShippingInfo.GetShippingInfo
@@ -42,23 +41,21 @@ export default async function handler(request) {
 
     const responseText = await response.text();
 
-    // 4. 실패 시 원인 분석을 위해 HTML 내용 일부를 보여줌
+    // 4. 에러 정밀 분석
     if (responseText.includes('<html') || responseText.includes('Can\'t find')) {
-       // 에러 페이지의 제목(Title)을 추출해서 보여줍니다.
-       const titleMatch = responseText.match(/<title>(.*?)<\/title>/);
-       const errorTitle = titleMatch ? titleMatch[1] : 'HTML Error Page';
-       throw new Error(`서버 응답 오류: JSON 대신 HTML이 도착했습니다. (${errorTitle}) - URL: ${targetUrl}`);
+       // 이번에도 안 되면 IP 제한 문제일 가능성이 높습니다.
+       throw new Error(`접속 거부: 큐텐 서버가 요청을 차단했습니다. (API Key의 IP 제한 설정을 확인해보세요)`);
     }
 
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      throw new Error(`데이터 파싱 실패: ${responseText.substring(0, 100)}...`);
+      throw new Error(`데이터 문제: ${responseText.substring(0, 100)}...`);
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP 상태 오류: ${response.status}`);
+      throw new Error(`서버 오류: ${response.status}`);
     }
 
     return new Response(JSON.stringify(data), {
