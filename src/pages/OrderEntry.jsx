@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, ThunderboltOutlined
+    KeyOutlined, CheckCircleOutlined, ThunderboltOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -13,12 +13,6 @@ const OrderEntry = () => {
     const [activeTab, setActiveTab] = useState('new'); 
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
-
-    // ★★★ [디버깅] 버튼 클릭 시 무조건 실행되는 함수
-    const showApiModal = () => {
-        alert("버튼이 눌렸습니다! 팝업을 엽니다."); // 이 창이 안 뜨면 브라우저 새로고침 필요
-        setIsApiModalVisible(true);
-    };
 
     const fetchOrders = async () => {
         setLoading(true);
@@ -35,82 +29,88 @@ const OrderEntry = () => {
 
     const handleRealApiSync = async () => {
         if (!apiKey) {
-            alert('API Key를 입력해주세요!');
+            message.warning('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        message.loading("Qoo10 서버(www.qoo10.jp) 접속 시도...", 1);
+        message.loading("Qoo10 서버 접속 중...", 1);
 
         try {
             const response = await fetch(`/api/qoo10?key=${encodeURIComponent(apiKey)}`);
             const jsonData = await response.json();
 
-            console.log("서버 응답:", jsonData); // F12 콘솔 확인용
-
-            // 1. 서버 에러 체크
+            // 1. 통신 에러 체크
             if (jsonData.error) {
-                alert(`통신 에러:\n${jsonData.error}\n${jsonData.preview || ''}`);
+                Modal.error({ title: '통신 오류', content: jsonData.error });
                 setLoading(false);
                 return;
             }
 
-            // 2. 큐텐 내부 에러 체크 (ResultCode)
-            if (jsonData.data && jsonData.data.ResultCode && jsonData.data.ResultCode < 0) {
+            // 2. ★★★ 성공 판정 로직 (테스트 폼 결과 기준) ★★★
+            // ResultCode가 0이면 무조건 성공입니다.
+            const apiResult = jsonData.data;
+            
+            if (apiResult.ResultCode === 0) {
+                // 데이터 추출
+                let qoo10Orders = [];
+                if (apiResult.ResultObject) {
+                    qoo10Orders = apiResult.ResultObject;
+                } else if (Array.isArray(apiResult.ResultObject)) { // 혹시 배열이면
+                     qoo10Orders = apiResult.ResultObject;
+                }
+
+                if (!qoo10Orders || qoo10Orders.length === 0) {
+                    Modal.success({
+                        title: 'API 연동 성공! ✅',
+                        content: (
+                            <div>
+                                <p><b>ResultCode: 0 (정상)</b></p>
+                                <p>API 연결에 완벽하게 성공했습니다.</p>
+                                <p>다만, 현재 <b>'배송요청'</b> 상태인 신규 주문이 0건입니다.</p>
+                                <p style={{color:'#888', fontSize:12}}>(테스트 폼 결과: "{apiResult.ResultMsg}")</p>
+                            </div>
+                        )
+                    });
+                } else {
+                    // 주문이 있으면 저장
+                    const formattedOrders = qoo10Orders.map(item => ({
+                        platform_name: 'Qoo10',
+                        platform_order_id: String(item.PackNo || item.OrderNo),
+                        order_number: String(item.OrderNo),
+                        customer: item.ReceiverName || item.Receiver || '고객', 
+                        product: item.ItemTitle || item.ItemName,
+                        barcode: item.SellerItemCode || 'BARCODE-MISSING',
+                        quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
+                        shipping_address: item.ReceiverAddr || item.ShippingAddr || '',
+                        shipping_memo: item.ShippingMsg || '',
+                        country_code: 'JP', 
+                        status: '처리대기',
+                        process_status: '접수',
+                        shipping_type: '택배',
+                        created_at: new Date()
+                    }));
+                    
+                    await supabase.from('orders').insert(formattedOrders);
+                    
+                    Modal.success({
+                        title: '주문 수집 완료! 🎉',
+                        content: `총 ${formattedOrders.length}건의 주문을 가져왔습니다.`
+                    });
+                    fetchOrders();
+                }
+                setIsApiModalVisible(false);
+
+            } else {
+                // ResultCode가 0이 아니면 실패
                  Modal.error({
                     title: 'API 거절됨',
-                    content: `코드: ${jsonData.data.ResultCode}\n메시지: ${jsonData.data.ResultMsg}`
+                    content: `코드: ${apiResult.ResultCode}\n메시지: ${apiResult.ResultMsg}`
                 });
-                setLoading(false);
-                return;
             }
-
-            // 3. 데이터 추출
-            let qoo10Orders = [];
-            const rawData = jsonData.data;
-
-            if (rawData.ResultObject) {
-                qoo10Orders = rawData.ResultObject;
-            } else if (Array.isArray(rawData)) {
-                qoo10Orders = rawData.flat(Infinity).filter(item => item && item.OrderNo);
-            }
-
-            // 4. 결과 처리
-            if (!qoo10Orders || qoo10Orders.length === 0) {
-                Modal.info({
-                    title: '연동 성공 (주문 없음)',
-                    content: '연결은 성공했습니다! (주소: www.qoo10.jp)\n다만, 최근 30일간 신규 주문이 없습니다.'
-                });
-            } else {
-                const formattedOrders = qoo10Orders.map(item => ({
-                    platform_name: 'Qoo10',
-                    platform_order_id: String(item.PackNo || item.OrderNo),
-                    order_number: String(item.OrderNo),
-                    customer: item.ReceiverName || item.Receiver || '고객', 
-                    product: item.ItemTitle || item.ItemName,
-                    barcode: item.SellerItemCode || 'BARCODE-MISSING',
-                    quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
-                    shipping_address: item.ReceiverAddr || item.ShippingAddr || '', // 주소!
-                    shipping_memo: item.ShippingMsg || '',
-                    country_code: 'JP', 
-                    status: '처리대기',
-                    process_status: '접수',
-                    shipping_type: '택배',
-                    created_at: new Date()
-                }));
-                
-                await supabase.from('orders').insert(formattedOrders);
-                
-                Modal.success({
-                    title: '주문 수집 성공! 🎉',
-                    content: `총 ${formattedOrders.length}건을 가져왔습니다.\n주소/전화번호 포함됨.`
-                });
-                fetchOrders(); 
-            }
-            setIsApiModalVisible(false);
 
         } catch (error) {
-            alert(`실행 중 에러: ${error.message}`);
+            Modal.error({ title: '시스템 에러', content: error.message });
         } finally {
             setLoading(false);
         }
@@ -137,7 +137,7 @@ const OrderEntry = () => {
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
                 <h2>📑 통합 주문 관리 (CBT)</h2>
                 <Space>
-                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={showApiModal} danger>
+                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => setIsApiModalVisible(true)} danger>
                         주문 자동 수집 (API)
                     </Button>
                 </Space>
@@ -155,8 +155,8 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="v3 정밀 연결 (www.qoo10.jp)" 
-                        description="테스트 폼과 100% 동일한 주소와 설정으로 접속합니다."
+                        message="API 테스트 통과 (ResultCode: 0)" 
+                        description="테스트 폼에서 검증된 설정으로 접속합니다."
                         type="success" 
                         showIcon 
                         icon={<ThunderboltOutlined />}

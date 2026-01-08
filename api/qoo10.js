@@ -10,10 +10,10 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ result: 'API Key 없음' }), { status: 400 });
   }
 
-  // 1. 날짜 설정 (YYYYMMDD) - 테스트 폼 포맷 준수
+  // 1. 날짜 설정 (YYYYMMDD) - 테스트 폼과 동일하게
   const now = new Date();
   const past = new Date();
-  past.setDate(now.getDate() - 30); 
+  past.setDate(now.getDate() - 45); // 넉넉하게 45일 전부터 조회
 
   const formatDate = (date) => {
     const y = date.getFullYear();
@@ -25,38 +25,39 @@ export default async function handler(request) {
   const sDate = formatDate(past);
   const eDate = formatDate(now);
 
-  // 2. ★★★ 주소 변경: api.qoo10.jp -> www.qoo10.jp ★★★
-  // 테스트 폼 스크린샷에 적힌 주소 그대로 씁니다.
+  // 2. ★★★ 핵심 수정: 테스트 폼에서 성공한 URL (www.qoo10.jp) ★★★
+  // api.qoo10.jp (X) -> www.qoo10.jp (O)
+  // 주소 뒤에 메서드 이름 포함
   const targetUrl = 'https://www.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi/ShippingBasic.GetShippingInfo_v3';
 
-  // 3. 파라미터 조립 (군더더기 제거)
+  // 3. 파라미터 조립 (테스트 폼 기준)
   const bodyData = new URLSearchParams();
   
-  // (1) 인증키: 'key' 빼고 'CertificationKey'만 보냅니다. (테스트 폼 기준)
+  // 인증키 이름: CertificationKey (테스트 폼과 동일)
   bodyData.append('CertificationKey', apiKey);
 
-  // (2) 나머지 파라미터 (스크린샷 그대로)
+  // 나머지 파라미터 (스크린샷 내용 준수)
   bodyData.append('ShippingStatus', '2');    // 2: 배송요청
-  bodyData.append('SearchStartDate', sDate); 
-  bodyData.append('SearchEndDate', eDate);   
-  bodyData.append('SearchCondition', '1');   
+  bodyData.append('SearchStartDate', sDate); // YYYYMMDD
+  bodyData.append('SearchEndDate', eDate);   // YYYYMMDD
+  bodyData.append('SearchCondition', '1');   // 1: 주문일 기준
 
   try {
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0' // 브라우저인 척 위장
+        'User-Agent': 'Mozilla/5.0' 
       },
       body: bodyData.toString()
     });
 
     const text = await response.text();
     
-    // 혹시 HTML(에러 페이지)이 오면 바로 보고
+    // HTML 에러 방지용 체크
     if (text.trim().startsWith('<')) {
          return new Response(JSON.stringify({ 
-            error: "HTML 응답 수신(주소 오류 가능성)", 
+            error: "HTML 응답(주소 오류)", 
             preview: text.substring(0, 100) 
         }), { status: 500 });
     }
@@ -68,6 +69,7 @@ export default async function handler(request) {
         return new Response(JSON.stringify({ error: "JSON 파싱 실패", raw: text }), { status: 500 });
     }
 
+    // 성공 결과 반환
     return new Response(JSON.stringify({
         status: "success",
         data: json 
