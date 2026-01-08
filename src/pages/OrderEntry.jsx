@@ -46,30 +46,26 @@ const OrderEntry = () => {
         try {
             message.loading(`큐텐(${apiRegion}) 주문을 수집합니다...`, 1);
 
-            // [변경] 최신 버전인 v3 API 사용
-            const methodName = 'ShippingBasic.GetShippingInfo_v3';
-
-            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
+            // 서버(api/qoo10.js)로 요청 (파라미터는 서버에서 자동 처리됨)
+            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
             
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error || `HTTP 오류: ${response.status}`);
+                throw new Error(errData.error || `HTTP 통신 오류 (${response.status})`);
             }
 
             const jsonData = await response.json();
 
-            // ★★★ [디버깅 강화] 에러 메시지 원본 표시
-            // ResultCode가 0이 아니면 실패입니다.
+            // 큐텐 거절 메시지 확인
             if (jsonData.ResultCode !== 0) {
-                // ResultMsg가 없으면 전체 JSON을 문자열로 보여줍니다 (undefined 방지)
                 const errorMsg = jsonData.ResultMsg || JSON.stringify(jsonData);
-                throw new Error(`API 거절: ${errorMsg}`);
+                throw new Error(`큐텐 거절: ${errorMsg}`);
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
             
             if (!qoo10Orders || qoo10Orders.length === 0) {
-                message.info('신규 주문(배송요청)이 없습니다.');
+                message.info({ content: '최근 7일간 신규 주문(배송요청)이 없습니다.', duration: 5 });
                 setLoading(false);
                 return;
             }
@@ -92,24 +88,14 @@ const OrderEntry = () => {
             const { error } = await supabase.from('orders').insert(formattedOrders);
             if (error) throw error;
 
-            message.success(`성공! 총 ${formattedOrders.length}건을 저장했습니다.`);
+            message.success({ content: `성공! 총 ${formattedOrders.length}건을 저장했습니다.`, duration: 5 });
             setIsApiModalVisible(false);
             fetchOrders();
 
         } catch (error) {
             console.error('API Error:', error);
-            // 에러 내용을 화면에 길게 띄워줍니다
-            Modal.error({
-                title: '연동 실패',
-                content: (
-                    <div>
-                        <p>큐텐 서버 응답 내용:</p>
-                        <div style={{background:'#f5f5f5', padding:10, borderRadius:5, wordBreak:'break-all', maxHeight:200, overflow:'auto'}}>
-                            {error.message}
-                        </div>
-                    </div>
-                )
-            });
+            // 에러 내용을 화면 상단에 빨갛게, 7초 동안 띄워줍니다.
+            message.error({ content: `실패: ${error.message}`, duration: 7 });
         } finally {
             setLoading(false);
         }
@@ -153,7 +139,7 @@ const OrderEntry = () => {
             
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
-                    <Alert message="API v3 (최신 버전)로 접속을 시도합니다." type="success" showIcon />
+                    <Alert message="안정적인 API(GetShippingInfo)로 접속합니다." type="success" showIcon />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
