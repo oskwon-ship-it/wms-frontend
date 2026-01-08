@@ -47,9 +47,9 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐(${apiRegion}) 서버에 접속 중...`, 1);
+            message.loading(`큐텐(${apiRegion}) 주문을 조회합니다...`, 1);
 
-            // [수정 완료] 오타 없는 깨끗한 코드입니다.
+            // [최종] v1 기본 명령어 사용
             const methodName = 'ShippingBasic.GetShippingInfo';
 
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
