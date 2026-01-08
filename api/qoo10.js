@@ -5,35 +5,42 @@ export const config = {
 export default async function handler(request) {
   const { searchParams } = new URL(request.url);
   const apiKey = searchParams.get('key');
-  const method = searchParams.get('method'); // 예: ShippingInfo.GetShippingInfo
+  
+  // 프론트엔드에서 보낸 메소드 이름 (예: ShippingInfo.GetShippingInfo)
+  let method = searchParams.get('method'); 
   const region = searchParams.get('region');
 
   if (!apiKey) {
     return new Response(JSON.stringify({ error: 'API Key is missing' }), { status: 400 });
   }
 
-  // 1. 도메인 설정: PDF 에 따라 www.qoo10.jp 사용
+  // ★ 1. PDF 분석 결과 적용: Namespace 자동 보정
+  // 사장님이 'ShippingInfo'로 보내더라도, PDF에 나온 'ShippingBasic'으로 바꿔서 요청합니다.
+  if (method && method.startsWith('ShippingInfo.')) {
+      method = method.replace('ShippingInfo.', 'ShippingBasic.');
+  }
+
+  // ★ 2. PDF 분석 결과 적용: 도메인은 www.qoo10.jp [cite: 110]
   const host = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
   
-  // 2. URL 패턴 설정: PDF 참조
-  // 규칙: 도메인 + 경로 + / + 메소드이름 (물음표? 사용 안 함)
+  // ★ 3. PDF 분석 결과 적용: URL 패턴은 .../ebayjapan.qapi/{메소드명} [cite: 474]
   const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi/${method}`;
 
-  // 3. 데이터 설정: POST Body에 데이터 담기 (PDF Request Type: POST)
+  // ★ 4. PDF 분석 결과 적용: 요청 방식은 POST [cite: 107]
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
   
-  // 주문 수집(GetShippingInfo)일 때는 'stat' 파라미터가 필요합니다.
+  // 주문 수집(GetShippingInfo)일 때 필요한 상태값 (PDF에는 없지만 필수)
   if (method.includes('GetShippingInfo')) {
-      bodyData.append('stat', '2'); // 2: 배송요청(결제완료) 상태
+      bodyData.append('stat', '2'); // 배송요청 상태
   }
 
   try {
     const response = await fetch(targetUrl, {
-      method: 'POST', // PDF 에 명시된 POST 방식
+      method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded', // POST 표준 헤더
+        'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
       body: bodyData.toString()
@@ -41,9 +48,8 @@ export default async function handler(request) {
 
     const responseText = await response.text();
 
-    // 4. 에러 분석
     if (responseText.includes('<html') || responseText.includes('Can\'t find')) {
-       throw new Error(`주소 오류: 큐텐 서버가 URL을 인식하지 못했습니다. (URL: ${targetUrl})`);
+       throw new Error(`주소 오류: 큐텐 서버가 요청을 인식하지 못했습니다. (URL: ${targetUrl})`);
     }
 
     let data;

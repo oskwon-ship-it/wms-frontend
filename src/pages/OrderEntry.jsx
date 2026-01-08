@@ -20,7 +20,7 @@ const OrderEntry = () => {
     const [apiKey, setApiKey] = useState(''); 
     const [apiRegion, setApiRegion] = useState('JP'); 
 
-    // 3. 주문 목록 조회
+    // 3. 주문 목록 조회 함수
     const fetchOrders = async () => {
         setLoading(true);
         let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
@@ -38,12 +38,13 @@ const OrderEntry = () => {
         setLoading(false);
     };
 
+    // 탭 변경 시 자동 조회
     useEffect(() => { 
         fetchOrders(); 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // ★★★ [수정됨] Vercel Serverless Function 사용 (가장 안정적)
+    // ★★★ 4. 큐텐 주문 가져오기 (PDF 분석 반영 완료)
     const handleRealApiSync = async () => {
         if (!apiKey) {
             message.error('API Key를 입력해주세요!');
@@ -54,38 +55,43 @@ const OrderEntry = () => {
         try {
             message.loading(`Vercel 서버를 통해 ${apiRegion} 큐텐에 접속 중...`, 1);
 
-            // 1. 우리가 만든 'api/qoo10.js' 파일로 요청을 보냅니다.
-            // 내 컴퓨터(로컬)에서는 작동 안 할 수 있으니 꼭 '배포' 후 테스트하세요!
-            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=ShippingInfo.GetShippingInfo`);
+            // [핵심 수정] PDF 문서에 따라 'ShippingInfo' -> 'ShippingBasic'으로 변경
+            // ShippingBasic.GetShippingInfo가 큐텐의 표준 주문 수집 명령입니다.
+            const methodName = 'ShippingBasic.GetShippingInfo';
+
+            // 우리가 만든 api/qoo10.js 서버로 요청 전송
+            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
             
             if (!response.ok) {
-                const errData = await response.json();
+                const errData = await response.json().catch(() => ({}));
                 throw new Error(errData.error || `서버 오류: ${response.status}`);
             }
 
             const jsonData = await response.json();
 
-            // 2. 큐텐 응답 확인
+            // 큐텐 응답 결과 코드 확인 (0이 성공)
             if (jsonData.ResultCode !== 0) {
-                throw new Error(jsonData.ResultMsg || 'API 호출 실패 (키를 확인하세요)');
+                throw new Error(jsonData.ResultMsg || 'API 호출 실패 (키를 확인하거나, 주문이 없는 상태일 수 있습니다)');
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
-            if (qoo10Orders.length === 0) {
-                message.info('가져올 신규 주문(배송요청)이 없습니다.');
+            
+            // 주문이 없는 경우 처리
+            if (!qoo10Orders || qoo10Orders.length === 0) {
+                message.info('가져올 신규 주문(배송요청 상태)이 없습니다.');
                 setLoading(false);
                 return;
             }
 
-            // 3. DB 저장
+            // DB 저장용 데이터 변환
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
-                platform_order_id: String(item.PackNo),
-                order_number: String(item.OrderNo),
-                customer: item.ReceiverName,
-                product: item.ItemTitle,
-                barcode: item.SellerItemCode || 'BARCODE-MISSING', 
-                quantity: parseInt(item.OrderQty, 10),
+                platform_order_id: String(item.PackNo),       // 장바구니 번호
+                order_number: String(item.OrderNo),           // 주문 번호
+                customer: item.ReceiverName || item.Receiver, // 수취인
+                product: item.ItemTitle,                      // 상품명
+                barcode: item.SellerItemCode || 'BARCODE-MISSING', // 판매자 상품코드
+                quantity: parseInt(item.OrderQty, 10),        // 수량
                 country_code: apiRegion, 
                 status: '처리대기',
                 process_status: '접수',
@@ -93,12 +99,13 @@ const OrderEntry = () => {
                 created_at: new Date()
             }));
 
+            // Supabase DB에 저장
             const { error } = await supabase.from('orders').insert(formattedOrders);
             if (error) throw error;
 
             message.success(`성공! 총 ${formattedOrders.length}건을 저장했습니다.`);
             setIsApiModalVisible(false);
-            fetchOrders();
+            fetchOrders(); // 목록 새로고침
 
         } catch (error) {
             // eslint-disable-next-line no-console
@@ -109,6 +116,7 @@ const OrderEntry = () => {
         }
     };
 
+    // 테이블 컬럼 설정
     const columns = [
         { 
             title: '플랫폼', dataIndex: 'platform_name', width: 100,
@@ -126,6 +134,7 @@ const OrderEntry = () => {
         { title: '상태', dataIndex: 'status', width: 100, render: t => <Tag color="geekblue">{t}</Tag> }
     ];
 
+    // 탭 메뉴 설정
     const tabItems = [
         { key: 'new', label: <span>📥 신규 접수 <Tag color="red">{orders.length}</Tag></span> },
         { key: 'processing', label: '📦 배송 준비중' },
@@ -183,7 +192,7 @@ const OrderEntry = () => {
                 <div style={{display:'flex', flexDirection:'column', gap: 15}}>
                     <Alert 
                         message="나만의 전용 서버(API) 사용 중" 
-                        description="Vercel 서버를 통해 안정적으로 큐텐에 접속합니다." 
+                        description="Vercel 서버를 통해 안정적으로 큐텐 정보를 가져옵니다." 
                         type="success" 
                         showIcon 
                         icon={<SafetyCertificateOutlined />}
