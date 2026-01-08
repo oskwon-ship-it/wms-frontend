@@ -1,65 +1,47 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { supabase } from './supabaseClient'; 
 
-// 페이지들 import
+// ★ 파일 경로가 다르면 이 부분을 수정해야 합니다. 
+// (보통 src/pages 폴더 안에 파일들이 있습니다)
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import OrderEntry from './pages/OrderEntry';
-import InventoryManagement from './pages/InventoryManagement'; 
-import InboundManagement from './pages/InboundManagement'; 
-import InventoryHistory from './pages/InventoryHistory';   
-import OrderProcessing from './pages/OrderProcessing';     
-import Login from './pages/Login'; 
-import ApiTester from './pages/ApiTester'; 
+import OrderProcessing from './pages/OrderProcessing';
+import InventoryManagement from './pages/InventoryManagement';
+import InventoryHistory from './pages/InventoryHistory';
+import InboundManagement from './pages/InboundManagement';
 
-// ★ 큐텐 페이지 임포트
-import Qoo10Orders from './pages/Qoo10Orders';
-
-function App() {
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading) return <div style={{textAlign:'center', marginTop:'20%', color:'#888'}}>WMS 접속 중...</div>;
-
-  if (!session) {
-    return <Login />;
-  }
-
+const App = () => {
   return (
     <Routes>
-        <Route path="/" element={<Dashboard />} />
-        
-        {/* 주문 관련 */}
-        <Route path="/orders" element={<OrderEntry />} />
-        <Route path="/order-processing" element={<OrderProcessing />} />
-        
-        {/* ★ 큐텐 전용 경로 */}
-        <Route path="/qoo10" element={<Qoo10Orders />} />
+      {/* 1. 기본 주소(/)로 들어오면 로그인 페이지로 이동 */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
 
-        {/* 재고/입고 관련 */}
-        <Route path="/inventory" element={<InventoryManagement />} />
-        <Route path="/inventory-history" element={<InventoryHistory />} />
-        <Route path="/inbound" element={<InboundManagement />} />
-        
-        <Route path="/api-test" element={<ApiTester />} />
+      {/* 2. 로그인 페이지 */}
+      <Route path="/login" element={<Login />} />
 
-        <Route path="*" element={<Navigate to="/" />} />
+      {/* 3. 대시보드 */}
+      <Route path="/dashboard" element={<Dashboard />} />
+
+      {/* 4. 주문 접수 (에러 해결 핵심!) */}
+      {/* 메뉴에서 /orders로 가든, /order-entry로 가든 에러 없이 페이지를 보여줍니다 */}
+      <Route path="/order-entry" element={<OrderEntry />} />
+      <Route path="/orders" element={<OrderEntry />} />
+
+      {/* 5. 송장/출고 관리 (관리자용) */}
+      <Route path="/order-process" element={<OrderProcessing />} />
+
+      {/* 6. 재고 관리 */}
+      <Route path="/inventory" element={<InventoryManagement />} />
+      <Route path="/history" element={<InventoryHistory />} />
+
+      {/* 7. 입고 관리 */}
+      <Route path="/inbound" element={<InboundManagement />} />
+
+      {/* 8. 없는 페이지 처리 (404) */}
+      <Route path="*" element={<div style={{ padding: '50px', textAlign: 'center' }}><h2>🚫 페이지를 찾을 수 없습니다.</h2><p>주소를 확인해주세요.</p></div>} />
     </Routes>
   );
-}
+};
 
 export default App;

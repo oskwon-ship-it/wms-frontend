@@ -1,15 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, theme, message, Spin, Tag } from 'antd';
+import { Layout, Menu, Button, theme, message, Spin, Avatar, Tag } from 'antd';
 import { 
-  LogoutOutlined, 
-  AppstoreOutlined, // UserOutlined 제거함 (에러 주범)
-  FileTextOutlined, 
-  RocketOutlined, 
-  ShopOutlined, 
-  ImportOutlined, 
-  SettingOutlined, 
-  HistoryOutlined,
-  GlobalOutlined 
+  LogoutOutlined, UserOutlined, AppstoreOutlined, 
+  FileTextOutlined, RocketOutlined, ShopOutlined, 
+  ImportOutlined, SettingOutlined, HistoryOutlined,
+  GlobalOutlined // CBT 느낌을 위해 지구본 아이콘 추가
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
@@ -28,6 +23,7 @@ const AppLayout = ({ children }) => {
 
     const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
 
+    // 로그인 체크 (모든 페이지 공통 적용)
     useEffect(() => {
         const checkUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
@@ -57,11 +53,12 @@ const AppLayout = ({ children }) => {
         message.success('로그아웃 되었습니다.');
     };
 
+    // 현재 주소에 따라 메뉴 하이라이트
     const getSelectedKey = () => {
         const path = location.pathname;
         if (path === '/dashboard' || path === '/') return 'dashboard';
         if (path === '/order-entry' || path === '/orders') return 'order-entry';
-        if (path === '/qoo10') return 'qoo10'; 
+        if (path === '/qoo10') return 'qoo10'; // ★ 큐텐 메뉴 활성화
         if (path === '/order-process') return 'order-process';
         if (path === '/inventory') return 'inventory';
         if (path === '/history') return 'history';
@@ -73,9 +70,10 @@ const AppLayout = ({ children }) => {
     const handleMenuClick = (e) => {
         if (e.key === 'inventory_group') return;
         
+        // ★ 여기서 경로 매핑 (key와 실제 경로 연결)
         if (e.key === 'dashboard') navigate('/');
         else if (e.key === 'order-entry') navigate('/orders');
-        else if (e.key === 'qoo10') navigate('/qoo10'); 
+        else if (e.key === 'qoo10') navigate('/qoo10'); // ★ 큐텐 이동
         else if (e.key === 'api-test') navigate('/api-test');
         else navigate(`/${e.key}`);
     };
@@ -110,6 +108,7 @@ const AppLayout = ({ children }) => {
                         { key: 'dashboard', icon: <AppstoreOutlined />, label: '대시보드' },
                         { key: 'order-entry', icon: <FileTextOutlined />, label: '주문 접수 (CBT)' },
                         
+                        // ★★★ 큐텐 전용 메뉴 추가 (여기에 넣었습니다) ★★★
                         { key: 'qoo10', icon: <GlobalOutlined style={{color: '#ff4d4f'}} />, label: '큐텐 주문 현황' },
 
                         isAdmin ? { key: 'order-process', icon: <RocketOutlined style={{color:'#4096ff'}} />, label: '출고 관리 (지시/검수)' } : null,
