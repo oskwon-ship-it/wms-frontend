@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { Table, Button, Input, Card, Modal, Tag, Row, Col, Statistic, Space } from 'antd';
+import { Table, Button, Input, Card, Modal, Tag, Row, Col, Statistic, Space } from 'antd'; // Divider 제거함
 import { 
     CloudDownloadOutlined, 
     KeyOutlined, 
@@ -16,7 +16,6 @@ const Qoo10Orders = () => {
     const [loading, setLoading] = useState(false);
     const [orders, setOrders] = useState([]); 
 
-    // 1. 큐텐 API 호출 (v1 방식)
     const handleFetchOrders = async () => {
         if (!apiKey) {
             Modal.warning({ title: '알림', content: 'API Key를 입력해주세요.' });
@@ -37,7 +36,6 @@ const Qoo10Orders = () => {
 
             const apiResult = jsonData.data;
             
-            // 성공 체크 (ResultCode 0 or -10001)
             if (apiResult.ResultCode === 0 || apiResult.ResultCode === -10001) {
                 let items = [];
                 if (apiResult.ResultObject) {
@@ -47,9 +45,8 @@ const Qoo10Orders = () => {
                 if (items.length === 0) {
                     Modal.info({ title: '완료', content: '배송요청(신규) 주문이 없습니다.' });
                 } else {
-                    // 데이터 가공
                     const formatted = items.map(item => ({
-                        key: item.OrderNo, 
+                        key: item.OrderNo,
                         order_no: String(item.OrderNo),
                         pack_no: String(item.PackNo),
                         product: item.ItemTitle || item.ItemName,
@@ -75,10 +72,8 @@ const Qoo10Orders = () => {
         }
     };
 
-    // 2. DB 저장 기능
     const handleSaveToDB = async () => {
         if (orders.length === 0) return;
-
         try {
             const dbData = orders.map(o => ({
                 platform_name: 'Qoo10',
@@ -99,7 +94,7 @@ const Qoo10Orders = () => {
             if (error) throw error;
 
             Modal.success({ title: '저장 완료', content: '주문 접수 메뉴에 등록되었습니다.' });
-            setOrders([]); // 저장 후 목록 비우기
+            setOrders([]); 
         } catch (e) {
             Modal.error({ title: '저장 실패', content: e.message });
         }

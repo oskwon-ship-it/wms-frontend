@@ -12,7 +12,7 @@ import OrderProcessing from './pages/OrderProcessing';
 import Login from './pages/Login'; 
 import ApiTester from './pages/ApiTester'; 
 
-// ★★★ 새로 만든 큐텐 전용 페이지 임포트 ★★★
+// ★ 큐텐 페이지 임포트
 import Qoo10Orders from './pages/Qoo10Orders';
 
 function App() {
@@ -35,7 +35,6 @@ function App() {
 
   if (loading) return <div style={{textAlign:'center', marginTop:'20%', color:'#888'}}>WMS 접속 중...</div>;
 
-  // 로그인이 안 되어 있으면 로그인 창 보여줌 (기존 기능 유지)
   if (!session) {
     return <Login />;
   }
@@ -48,7 +47,7 @@ function App() {
         <Route path="/orders" element={<OrderEntry />} />
         <Route path="/order-processing" element={<OrderProcessing />} />
         
-        {/* ★★★ 큐텐 전용 메뉴 경로 추가 ★★★ */}
+        {/* ★ 큐텐 전용 경로 */}
         <Route path="/qoo10" element={<Qoo10Orders />} />
 
         {/* 재고/입고 관련 */}
