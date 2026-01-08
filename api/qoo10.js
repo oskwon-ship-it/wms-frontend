@@ -1,4 +1,3 @@
-// Vercel Edge Function 설정
 export const config = {
   runtime: 'edge',
 };
@@ -16,43 +15,50 @@ export default async function handler(request) {
     });
   }
 
-  const host = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
+  // 1. [핵심 변경] 배송/주문 관련은 구형 서버(api.qoo10.jp)가 정석입니다.
+  // www.qoo10.jp는 최신 기능(CS 등) 전용일 수 있습니다.
+  const host = region === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
   
-  // 1. 주소는 깔끔하게 (뒤에 물음표(?) 등을 다 뺍니다)
-  const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi/${method}`;
+  // 2. [핵심 변경] 주소 뒤에 함수명을 붙이지 않고, 기본 주소만 씁니다.
+  // (함수명은 Body에 넣어서 보냅니다)
+  const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi`;
 
-  // 2. ★★★ [핵심 수정] 데이터를 주소가 아닌 'Body(본문)'에 담습니다.
+  // 3. 데이터를 Body에 모두 담습니다. (POST 전송)
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
-  bodyData.append('stat', '2'); // 2: 배송요청 상태 (주문 수집 대상)
+  bodyData.append('method', method); // 예: ShippingInfo.GetShippingInfo
+  bodyData.append('stat', '2');      // 배송요청 상태
 
   try {
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded', // 폼 데이터 형식
+        'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      body: bodyData.toString() // 여기에 데이터를 넣어서 보냅니다!
+      body: bodyData.toString()
     });
 
     const responseText = await response.text();
 
-    // 3. 에러 체크
+    // 4. 실패 시 원인 분석을 위해 HTML 내용 일부를 보여줌
     if (responseText.includes('<html') || responseText.includes('Can\'t find')) {
-       throw new Error(`주소/전송 방식 오류: 서버가 요청을 거부했습니다. (URL: ${targetUrl})`);
+       // 에러 페이지의 제목(Title)을 추출해서 보여줍니다.
+       const titleMatch = responseText.match(/<title>(.*?)<\/title>/);
+       const errorTitle = titleMatch ? titleMatch[1] : 'HTML Error Page';
+       throw new Error(`서버 응답 오류: JSON 대신 HTML이 도착했습니다. (${errorTitle}) - URL: ${targetUrl}`);
     }
 
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      throw new Error(`응답 파싱 실패: ${responseText.substring(0, 100)}...`);
+      throw new Error(`데이터 파싱 실패: ${responseText.substring(0, 100)}...`);
     }
 
     if (!response.ok) {
-      throw new Error(`HTTP 오류: ${response.status}`);
+      throw new Error(`HTTP 상태 오류: ${response.status}`);
     }
 
     return new Response(JSON.stringify(data), {
