@@ -1,27 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'; // React 제거, Hook만 가져옴
 import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Select, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    ShoppingCartOutlined, GlobalOutlined, FileExcelOutlined,
-    KeyOutlined, SafetyCertificateOutlined
+    ShoppingCartOutlined, FileExcelOutlined,
+    KeyOutlined, SafetyCertificateOutlined,
+    GlobalOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
-const { RangePicker } = DatePicker;
-const { Option } = Select;
-
 const OrderEntry = () => {
+    // 1. 기본 상태 변수
     const [loading, setLoading] = useState(false);
     const [orders, setOrders] = useState([]);
     const [activeTab, setActiveTab] = useState('new'); 
 
-    // API 연동 관련 상태
+    // 2. API 연동 관련 상태
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
-    const [selectedPlatform, setSelectedPlatform] = useState('Qoo10');
-    const [apiKey, setApiKey] = useState(''); // 사용자가 입력할 API 키
-    const [apiRegion, setApiRegion] = useState('JP'); // 큐텐 지역 (JP or SG)
+    const [apiKey, setApiKey] = useState(''); 
+    const [apiRegion, setApiRegion] = useState('JP'); 
 
+    // 3. 주문 목록 조회
     const fetchOrders = async () => {
         setLoading(true);
         let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
@@ -39,9 +38,13 @@ const OrderEntry = () => {
         setLoading(false);
     };
 
-    useEffect(() => { fetchOrders(); }, [activeTab]);
+    // 탭 변경 시 조회
+    useEffect(() => { 
+        fetchOrders(); 
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab]);
 
-    // ★★★ [핵심] 큐텐 실제 API 호출 로직
+    // 4. 큐텐 실제 API 호출 (Vite Proxy 사용)
     const handleRealApiSync = async () => {
         if (!apiKey) {
             message.error('API Key를 입력해주세요!');
@@ -50,67 +53,62 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            // 1. 큐텐 API 엔드포인트 설정 (일본 or 싱가포르)
-            // 주의: 브라우저 CORS 에러 회피를 위해 'corsproxy.io' 같은 프록시를 임시로 사용하거나,
-            // 추후에는 Supabase Edge Function을 써야 합니다. 일단은 직접 호출 시도해봅니다.
-            const baseUrl = apiRegion === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
-            
-            // 주문 조회 API URL (배송요청 상태인 주문 가져오기)
-            // method=ShippingInfo.GetShippingInfo & stat=2 (배송요청)
-            const targetUrl = `${baseUrl}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=ShippingInfo.GetShippingInfo&stat=2`;
-            
-            // CORS 에러 방지를 위한 프록시 URL (테스트용)
-            // 실제 운영 시에는 본인의 백엔드 서버를 거쳐야 안전합니다.
-            const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
+            // Vite Proxy 설정(/api_jp)을 통해 CORS 우회
+            const proxyPath = apiRegion === 'JP' ? '/api_jp' : '/api_sg';
+            const targetUrl = `${proxyPath}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=ShippingInfo.GetShippingInfo&stat=2`;
 
             message.loading(`${apiRegion} 큐텐 서버에 접속 중...`, 1);
             
-            const response = await fetch(proxyUrl);
+            const response = await fetch(targetUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP Error: ${response.status}`);
+            }
+
             const jsonData = await response.json();
 
-            // 2. 응답 데이터 확인
             if (jsonData.ResultCode !== 0) {
-                // 큐텐은 성공 시 ResultCode가 0입니다.
-                throw new Error(jsonData.ResultMsg || '큐텐 API 호출 실패');
+                throw new Error(jsonData.ResultMsg || '큐텐 API 호출 실패 (키 확인 필요)');
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
             if (qoo10Orders.length === 0) {
-                message.info('신규 주문이 없습니다.');
+                message.info('가져올 신규 주문이 없습니다.');
                 setLoading(false);
                 return;
             }
 
-            // 3. 우리 DB 포맷으로 변환 (Mapping)
+            // DB 포맷으로 변환
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
-                platform_order_id: String(item.PackNo), // 합포장 번호
+                platform_order_id: String(item.PackNo),
                 order_number: String(item.OrderNo),
                 customer: item.ReceiverName,
                 product: item.ItemTitle,
-                barcode: item.SellerItemCode || 'BARCODE-MISSING', // 판매자 코드(바코드)
+                barcode: item.SellerItemCode || 'BARCODE-MISSING', 
                 quantity: parseInt(item.OrderQty, 10),
-                country_code: apiRegion, // JP or SG
+                country_code: apiRegion, 
                 status: '처리대기',
                 process_status: '접수',
                 shipping_type: '택배',
                 created_at: new Date()
             }));
 
-            // 4. Supabase에 저장 (중복 방지는 나중에 처리)
             const { error } = await supabase.from('orders').insert(formattedOrders);
             if (error) throw error;
 
-            message.success(`총 ${formattedOrders.length}건의 주문을 큐텐에서 가져왔습니다!`);
+            message.success(`성공! 총 ${formattedOrders.length}건을 저장했습니다.`);
             setIsApiModalVisible(false);
             fetchOrders();
 
         } catch (error) {
-            console.error(error);
-            message.error(`연동 실패: ${error.message}`);
-            // CORS 에러일 경우 힌트 주기
-            if (error.message.includes('Failed to fetch')) {
-                message.warning('브라우저 보안(CORS) 문제입니다. 관리자에게 문의하세요.');
+            // eslint-disable-next-line no-console
+            console.error('API Error:', error);
+
+            if (error.message.includes('Unexpected token') || error.message.includes('not valid JSON')) {
+                 message.error('응답 형식이 올바르지 않습니다. (API Key가 틀렸거나, Proxy 설정이 재시작되지 않았습니다)');
+            } else {
+                 message.error(`연동 실패: ${error.message}`);
             }
         } finally {
             setLoading(false);
@@ -120,7 +118,11 @@ const OrderEntry = () => {
     const columns = [
         { 
             title: '플랫폼', dataIndex: 'platform_name', width: 100,
-            render: t => t === 'Qoo10' ? <Tag color="red" icon={<ShoppingCartOutlined />}>Qoo10</Tag> : <Tag>{t || '수기'}</Tag>
+            render: t => {
+                if(t === 'Shopee') return <Tag color="orange" icon={<GlobalOutlined />}>Shopee</Tag>;
+                if(t === 'Qoo10') return <Tag color="red" icon={<ShoppingCartOutlined />}>Qoo10</Tag>;
+                return <Tag>{t || '수기'}</Tag>;
+            }
         },
         { title: '국가', dataIndex: 'country_code', width: 80, render: t => t ? <Tag color="blue">{t}</Tag> : '-' },
         { title: '주문번호', dataIndex: 'order_number', width: 180, render: t => <b>{t}</b> },
@@ -144,10 +146,7 @@ const OrderEntry = () => {
                     <Button 
                         type="primary" 
                         icon={<CloudDownloadOutlined />} 
-                        onClick={() => {
-                            setSelectedPlatform('Qoo10');
-                            setIsApiModalVisible(true);
-                        }}
+                        onClick={() => setIsApiModalVisible(true)}
                         style={{background: '#ff4d4f', borderColor: '#ff4d4f', fontWeight: 'bold'}}
                     >
                         주문 자동 수집 (API)
@@ -158,7 +157,7 @@ const OrderEntry = () => {
 
             <Card size="small" style={{ marginBottom: 16 }}>
                 <Space>
-                    <RangePicker placeholder={['시작일', '종료일']} />
+                    <DatePicker.RangePicker placeholder={['시작일', '종료일']} />
                     <Input placeholder="주문번호/수취인 검색" prefix={<SearchOutlined />} style={{width: 200}} />
                     <Button icon={<ReloadOutlined />} onClick={fetchOrders}>조회</Button>
                 </Space>
@@ -176,7 +175,6 @@ const OrderEntry = () => {
                 size="middle"
             />
 
-            {/* API 연동 모달 */}
             <Modal 
                 title={<span><ShoppingCartOutlined style={{color:'red'}} /> 큐텐 주문 가져오기</span>}
                 open={isApiModalVisible} 
@@ -190,9 +188,9 @@ const OrderEntry = () => {
             >
                 <div style={{display:'flex', flexDirection:'column', gap: 15}}>
                     <Alert 
-                        message="보안 주의" 
-                        description="API Key는 저장되지 않으며, 1회성 호출에만 사용됩니다." 
-                        type="warning" 
+                        message="개발 환경(Vite) Proxy 사용 중" 
+                        description="브라우저 CORS 에러 없이 안전하게 큐텐 서버에 접속합니다." 
+                        type="success" 
                         showIcon 
                         icon={<SafetyCertificateOutlined />}
                     />
