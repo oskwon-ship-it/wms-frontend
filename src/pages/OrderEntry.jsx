@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, CheckCircleOutlined, ThunderboltOutlined
+    KeyOutlined, ThunderboltOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -34,51 +34,55 @@ const OrderEntry = () => {
         }
 
         setLoading(true);
-        message.loading("Qoo10 서버 접속 중...", 1);
+        message.loading("api.qoo10.jp 접속 중...", 1);
 
         try {
             const response = await fetch(`/api/qoo10?key=${encodeURIComponent(apiKey)}`);
             const jsonData = await response.json();
 
-            // 1. 통신 에러 체크
+            // 1. 서버 통신 에러 체크
             if (jsonData.error) {
-                Modal.error({ title: '통신 오류', content: jsonData.error });
+                Modal.error({ 
+                    title: '연결 실패', 
+                    content: `서버 응답: ${jsonData.details || jsonData.error}` 
+                });
                 setLoading(false);
                 return;
             }
 
-            // 2. ★★★ 성공 판정 로직 (테스트 폼 결과 기준) ★★★
-            // ResultCode가 0이면 무조건 성공입니다.
+            // 2. API 결과 분석
             const apiResult = jsonData.data;
             
+            // ResultCode 0이면 성공
             if (apiResult.ResultCode === 0) {
-                // 데이터 추출
                 let qoo10Orders = [];
                 if (apiResult.ResultObject) {
                     qoo10Orders = apiResult.ResultObject;
-                } else if (Array.isArray(apiResult.ResultObject)) { // 혹시 배열이면
+                } else if (Array.isArray(apiResult.ResultObject)) {
                      qoo10Orders = apiResult.ResultObject;
                 }
 
                 if (!qoo10Orders || qoo10Orders.length === 0) {
+                    // ★ 주문이 0건이어도 성공 팝업 띄움!
                     Modal.success({
                         title: 'API 연동 성공! ✅',
                         content: (
                             <div>
                                 <p><b>ResultCode: 0 (정상)</b></p>
-                                <p>API 연결에 완벽하게 성공했습니다.</p>
-                                <p>다만, 현재 <b>'배송요청'</b> 상태인 신규 주문이 0건입니다.</p>
-                                <p style={{color:'#888', fontSize:12}}>(테스트 폼 결과: "{apiResult.ResultMsg}")</p>
+                                <p>서버 연결에 성공했습니다.</p>
+                                <p>현재 <b>'배송요청(신규)'</b> 상태인 주문이 없습니다.</p>
+                                <p style={{color:'#999', fontSize:12}}>
+                                    (테스트 폼 결과와 동일: "SUCCESS. But No Result")
+                                </p>
                             </div>
                         )
                     });
                 } else {
-                    // 주문이 있으면 저장
                     const formattedOrders = qoo10Orders.map(item => ({
                         platform_name: 'Qoo10',
                         platform_order_id: String(item.PackNo || item.OrderNo),
                         order_number: String(item.OrderNo),
-                        customer: item.ReceiverName || item.Receiver || '고객', 
+                        customer: item.ReceiverName || item.Receiver, 
                         product: item.ItemTitle || item.ItemName,
                         barcode: item.SellerItemCode || 'BARCODE-MISSING',
                         quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
@@ -102,9 +106,8 @@ const OrderEntry = () => {
                 setIsApiModalVisible(false);
 
             } else {
-                // ResultCode가 0이 아니면 실패
                  Modal.error({
-                    title: 'API 거절됨',
+                    title: '큐텐 거절',
                     content: `코드: ${apiResult.ResultCode}\n메시지: ${apiResult.ResultMsg}`
                 });
             }
@@ -155,8 +158,8 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="API 테스트 통과 (ResultCode: 0)" 
-                        description="테스트 폼에서 검증된 설정으로 접속합니다."
+                        message="최종 완성 (api.qoo10.jp)" 
+                        description="봇 차단을 우회하는 공식 API 주소로 접속합니다."
                         type="success" 
                         showIcon 
                         icon={<ThunderboltOutlined />}

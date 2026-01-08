@@ -10,10 +10,10 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ result: 'API Key 없음' }), { status: 400 });
   }
 
-  // 1. 날짜 설정 (YYYYMMDD)
+  // 1. 날짜 설정 (최근 45일)
   const now = new Date();
   const past = new Date();
-  past.setDate(now.getDate() - 45); // 45일 조회
+  past.setDate(now.getDate() - 45); 
 
   const formatDate = (date) => {
     const y = date.getFullYear();
@@ -25,19 +25,16 @@ export default async function handler(request) {
   const sDate = formatDate(past);
   const eDate = formatDate(now);
 
-  // 2. ★★★ 핵심 수정: 도메인은 'api', 경로는 'v3' ★★★
-  // www.qoo10.jp -> api.qoo10.jp (서버 차단 방지)
-  // 경로는 테스트 폼에서 찾은 v3 그대로 사용
+  // 2. ★★★ 핵심 수정: 도메인 변경 (www -> api) ★★★
+  // www는 웹사이트라 차단되지만, api는 프로그램용이라 열려있습니다.
+  // 경로는 테스트 폼에서 확인한 v3 그대로 유지합니다.
   const targetUrl = 'https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi/ShippingBasic.GetShippingInfo_v3';
 
-  // 3. 파라미터 조립 (테스트 폼과 100% 동일)
+  // 3. 파라미터 조립 (테스트 폼 성공 설정 그대로)
   const bodyData = new URLSearchParams();
   
-  // 인증키 이름: CertificationKey
-  bodyData.append('CertificationKey', apiKey);
-
-  // 나머지 파라미터
-  bodyData.append('ShippingStatus', '2');    // 2: 배송요청
+  bodyData.append('CertificationKey', apiKey); // 키 이름 준수
+  bodyData.append('ShippingStatus', '2');      // 2: 배송요청
   bodyData.append('SearchStartDate', sDate); 
   bodyData.append('SearchEndDate', eDate);   
   bodyData.append('SearchCondition', '1');   
@@ -47,18 +44,18 @@ export default async function handler(request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0' // 봇 차단 회피용 헤더
+        'User-Agent': 'Mozilla/5.0' // 봇 차단 최소화
       },
       body: bodyData.toString()
     });
 
     const text = await response.text();
 
-    // 500 에러 방지: 응답이 HTML(차단 화면)인지 확인
-    if (text.trim().startsWith('<')) {
+    // 혹시라도 또 차단당하면 에러 내용을 볼 수 있게 처리
+    if (!response.ok || text.trim().startsWith('<')) {
          return new Response(JSON.stringify({ 
-            error: "Qoo10 서버 차단됨 (HTML 응답)", 
-            preview: text.substring(0, 100) 
+            error: "서버 접속 불가", 
+            details: text.substring(0, 200) 
         }), { status: 502 });
     }
 
@@ -66,7 +63,7 @@ export default async function handler(request) {
     try {
         json = JSON.parse(text);
     } catch (e) {
-        return new Response(JSON.stringify({ error: "JSON 파싱 실패", raw: text }), { status: 500 });
+        return new Response(JSON.stringify({ error: "응답 파싱 실패", raw: text }), { status: 500 });
     }
 
     return new Response(JSON.stringify({
