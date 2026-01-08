@@ -17,9 +17,9 @@ export default async function handler(request) {
   const past = new Date();
   past.setDate(now.getDate() - 45); 
 
-  [cite_start]// ★★★ [수정 핵심] 날짜 형식에 하이픈(-) 추가 [cite: 227]
+  // ★★★ [수정 핵심] 날짜 형식에 하이픈(-) 추가
   // 이전: 20240101 (실패 원인)
-  // 수정: 2024-01-01 (PDF 문서 표준)
+  // 수정: 2024-01-01 (PDF 문서 표준 )
   const formatDate = (date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -85,7 +85,7 @@ export default async function handler(request) {
             params.append('search_sdate', sDate);
             params.append('search_edate', eDate);
             
-            [cite_start]// PDF 문서에 나온 대문자 파라미터명 [cite: 227]
+            // PDF 문서에 나온 대문자 파라미터명 
             params.append('SearchSdate', sDate);
             params.append('SearchEdate', eDate);
         }
