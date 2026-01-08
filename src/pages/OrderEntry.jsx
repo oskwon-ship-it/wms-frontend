@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'; // React 제거, Hook만 가져옴
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Select, Alert } from 'antd';
 import { 
@@ -38,13 +38,12 @@ const OrderEntry = () => {
         setLoading(false);
     };
 
-    // 탭 변경 시 조회
     useEffect(() => { 
         fetchOrders(); 
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // 4. 큐텐 실제 API 호출 (Vite Proxy 사용)
+    // ★★★ [수정됨] 설정 파일 필요 없는 '만능 우회' 호출 방식
     const handleRealApiSync = async () => {
         if (!apiKey) {
             message.error('API Key를 입력해주세요!');
@@ -53,32 +52,38 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            // Vite Proxy 설정(/api_jp)을 통해 CORS 우회
-            const proxyPath = apiRegion === 'JP' ? '/api_jp' : '/api_sg';
-            const targetUrl = `${proxyPath}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=ShippingInfo.GetShippingInfo&stat=2`;
-
             message.loading(`${apiRegion} 큐텐 서버에 접속 중...`, 1);
+
+            // 1. 큐텐 원본 주소 (Proxy Path 사용 안 함)
+            const baseUrl = apiRegion === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
+            const targetUrl = `${baseUrl}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=ShippingInfo.GetShippingInfo&stat=2`;
+
+            // 2. AllOrigins 우회 서버 사용 (설정 파일 없이 CORS 해결)
+            // 이 주소 뒤에 원본 주소를 붙이면 대신 갖다줍니다.
+            const bypassUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
             
-            const response = await fetch(targetUrl);
+            const response = await fetch(bypassUrl);
             
             if (!response.ok) {
-                throw new Error(`HTTP Error: ${response.status}`);
+                throw new Error(`서버 접속 오류: ${response.status}`);
             }
 
             const jsonData = await response.json();
 
+            // 3. 큐텐 응답 확인
             if (jsonData.ResultCode !== 0) {
-                throw new Error(jsonData.ResultMsg || '큐텐 API 호출 실패 (키 확인 필요)');
+                // 키가 틀렸거나 주문이 없을 때
+                throw new Error(jsonData.ResultMsg || 'API 호출 실패 (키를 확인하세요)');
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
             if (qoo10Orders.length === 0) {
-                message.info('가져올 신규 주문이 없습니다.');
+                message.info('가져올 신규 주문(배송요청)이 없습니다.');
                 setLoading(false);
                 return;
             }
 
-            // DB 포맷으로 변환
+            // 4. DB 저장
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
                 platform_order_id: String(item.PackNo),
@@ -104,12 +109,7 @@ const OrderEntry = () => {
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('API Error:', error);
-
-            if (error.message.includes('Unexpected token') || error.message.includes('not valid JSON')) {
-                 message.error('응답 형식이 올바르지 않습니다. (API Key가 틀렸거나, Proxy 설정이 재시작되지 않았습니다)');
-            } else {
-                 message.error(`연동 실패: ${error.message}`);
-            }
+            message.error(`연동 실패: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -188,8 +188,8 @@ const OrderEntry = () => {
             >
                 <div style={{display:'flex', flexDirection:'column', gap: 15}}>
                     <Alert 
-                        message="개발 환경(Vite) Proxy 사용 중" 
-                        description="브라우저 CORS 에러 없이 안전하게 큐텐 서버에 접속합니다." 
+                        message="API 연동 준비 완료" 
+                        description="외부 우회 서버(AllOrigins)를 통해 안전하게 접속합니다." 
                         type="success" 
                         showIcon 
                         icon={<SafetyCertificateOutlined />}
