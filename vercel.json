@@ -1,8 +1,16 @@
 {
   "rewrites": [
     {
+      "source": "/api_jp/:path*",
+      "destination": "https://api.qoo10.jp/:path*"
+    },
+    {
+      "source": "/api_sg/:path*",
+      "destination": "https://api.qoo10.sg/:path*"
+    },
+    {
       "source": "/(.*)",
-      "destination": "/"
+      "destination": "/index.html"
     }
   ]
 }
