@@ -32,6 +32,7 @@ const AppLayout = ({ children }) => {
                 return;
             }
             setUserEmail(user.email);
+            // kos@cbg.com 이면 관리자 권한 부여
             const adminAuth = user.email === 'kos@cbg.com'; 
             setIsAdmin(adminAuth);
 
@@ -56,26 +57,19 @@ const AppLayout = ({ children }) => {
     // 현재 주소에 따라 메뉴 하이라이트
     const getSelectedKey = () => {
         const path = location.pathname;
-        if (path === '/dashboard' || path === '/') return 'dashboard';
+        if (path === '/dashboard') return 'dashboard';
         if (path === '/order-entry' || path === '/orders') return 'order-entry';
-        if (path === '/qoo10') return 'qoo10'; // ★ 큐텐 메뉴 활성화
         if (path === '/order-process') return 'order-process';
         if (path === '/inventory') return 'inventory';
         if (path === '/history') return 'history';
         if (path === '/inbound') return 'inbound';
-        if (path === '/api-test') return 'api-test';
         return '';
     };
 
     const handleMenuClick = (e) => {
+        // 서브메뉴(inventory_group) 클릭 시 이동 방지
         if (e.key === 'inventory_group') return;
-        
-        // ★ 여기서 경로 매핑 (key와 실제 경로 연결)
-        if (e.key === 'dashboard') navigate('/');
-        else if (e.key === 'order-entry') navigate('/orders');
-        else if (e.key === 'qoo10') navigate('/qoo10'); // ★ 큐텐 이동
-        else if (e.key === 'api-test') navigate('/api-test');
-        else navigate(`/${e.key}`);
+        navigate(`/${e.key}`);
     };
 
     if (loading) {
@@ -107,10 +101,7 @@ const AppLayout = ({ children }) => {
                     items={[
                         { key: 'dashboard', icon: <AppstoreOutlined />, label: '대시보드' },
                         { key: 'order-entry', icon: <FileTextOutlined />, label: '주문 접수 (CBT)' },
-                        
-                        // ★★★ 큐텐 전용 메뉴 추가 (여기에 넣었습니다) ★★★
-                        { key: 'qoo10', icon: <GlobalOutlined style={{color: '#ff4d4f'}} />, label: '큐텐 주문 현황' },
-
+                        // 관리자만 보이는 메뉴
                         isAdmin ? { key: 'order-process', icon: <RocketOutlined style={{color:'#4096ff'}} />, label: '출고 관리 (지시/검수)' } : null,
                         { 
                             key: 'inventory_group', 
@@ -123,7 +114,7 @@ const AppLayout = ({ children }) => {
                         },
                         { key: 'inbound', icon: <ImportOutlined />, label: '입고 관리' },
                         { type: 'divider' },
-                        { key: 'api-test', icon: <SettingOutlined />, label: 'API 연동 테스트' },
+                        { key: 'settings', icon: <SettingOutlined />, label: '설정', disabled: true },
                     ]}
                 />
             </Sider>
@@ -131,6 +122,7 @@ const AppLayout = ({ children }) => {
             <Layout>
                 <Header style={{ padding: '0 24px', background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{fontWeight: 'bold', fontSize: '16px'}}>
+                        {/* 현재 페이지 제목을 표시해주면 더 좋음 */}
                         <GlobalOutlined style={{marginRight:8, color:'#1890ff'}} />
                         CBT 통합 물류 시스템 v2.0
                     </div>
