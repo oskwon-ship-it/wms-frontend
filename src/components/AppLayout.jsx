@@ -1,151 +1,150 @@
-import React, { useState } from 'react';
-import { Layout, Menu, Button, theme, Modal } from 'antd'; // Modal 추가
+import React, { useState, useEffect } from 'react';
+import { Layout, Menu, Button, theme, message, Spin, Avatar, Tag } from 'antd';
 import { 
-    MenuFoldOutlined, 
-    MenuUnfoldOutlined, 
-    DashboardOutlined, 
-    OrderedListOutlined, 
-    CodeSandboxOutlined, 
-    HistoryOutlined,     
-    ImportOutlined,      
-    RocketOutlined,      
-    ToolOutlined,        
-    LogoutOutlined 
+  LogoutOutlined, UserOutlined, AppstoreOutlined, 
+  FileTextOutlined, RocketOutlined, ShopOutlined, 
+  ImportOutlined, SettingOutlined, HistoryOutlined,
+  GlobalOutlined // CBT 느낌을 위해 지구본 아이콘 추가
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '../supabaseClient'; // ★ 로그아웃을 위해 필수!
+import { supabase } from '../supabaseClient';
 
-const { Header, Sider, Content } = Layout;
+const { Header, Content, Sider } = Layout;
 
 const AppLayout = ({ children }) => {
-    const [collapsed, setCollapsed] = useState(false);
-    const { token } = theme.useToken();
     const navigate = useNavigate();
-    const location = useLocation();
+    const location = useLocation(); 
+    
+    const [userEmail, setUserEmail] = useState('');
+    const [customerName, setCustomerName] = useState('');
+    const [isAdmin, setIsAdmin] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [collapsed, setCollapsed] = useState(false);
 
-    // ★★★ [로그아웃 기능] 이게 빠져 있었습니다! 죄송합니다! ★★★
-    const handleLogout = async () => {
-        Modal.confirm({
-            title: '로그아웃',
-            content: '정말 시스템에서 나가시겠습니까?',
-            okText: '나가기',
-            cancelText: '취소',
-            okType: 'danger',
-            onOk: async () => {
-                await supabase.auth.signOut(); // 1. 수파베이스 서버에 로그아웃 요청
-                // App.jsx가 "어? 세션 없어졌네?" 하고 감지해서 자동으로 로그인 창을 띄웁니다.
+    const { token: { colorBgContainer, borderRadiusLG } } = theme.useToken();
+
+    // 로그인 체크 (모든 페이지 공통 적용)
+    useEffect(() => {
+        const checkUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                navigate('/login');
+                return;
             }
-        });
+            setUserEmail(user.email);
+            // kos@cbg.com 이면 관리자 권한 부여
+            const adminAuth = user.email === 'kos@cbg.com'; 
+            setIsAdmin(adminAuth);
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('customer_name')
+                .eq('id', user.id)
+                .single();
+            
+            if (profile) setCustomerName(profile.customer_name);
+            setLoading(false);
+        };
+        checkUser();
+    }, [navigate]);
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        navigate('/login');
+        message.success('로그아웃 되었습니다.');
     };
 
-    const items = [
-        {
-            key: '/',
-            icon: <DashboardOutlined />,
-            label: '대시보드',
-        },
-        {
-            key: '/orders',
-            icon: <OrderedListOutlined />,
-            label: '주문 접수 (CBT)',
-        },
-        {
-            key: '/order-processing',
-            icon: <RocketOutlined />,
-            label: '주문 처리',
-        },
-        {
-            key: '/inbound',
-            icon: <ImportOutlined />,
-            label: '입고 관리',
-        },
-        {
-            key: '/inventory',
-            icon: <CodeSandboxOutlined />,
-            label: '재고 관리',
-        },
-        {
-            key: '/inventory-history',
-            icon: <HistoryOutlined />,
-            label: '재고 수불부',
-        },
-        {
-            type: 'divider', 
-        },
-        {
-            key: '/api-test',
-            icon: <ToolOutlined style={{ color: '#faad14' }} />, 
-            label: 'API 연동 테스트',
-        },
-    ];
+    // 현재 주소에 따라 메뉴 하이라이트
+    const getSelectedKey = () => {
+        const path = location.pathname;
+        if (path === '/dashboard') return 'dashboard';
+        if (path === '/order-entry' || path === '/orders') return 'order-entry';
+        if (path === '/order-process') return 'order-process';
+        if (path === '/inventory') return 'inventory';
+        if (path === '/history') return 'history';
+        if (path === '/inbound') return 'inbound';
+        return '';
+    };
 
     const handleMenuClick = (e) => {
-        navigate(e.key);
+        // 서브메뉴(inventory_group) 클릭 시 이동 방지
+        if (e.key === 'inventory_group') return;
+        navigate(`/${e.key}`);
     };
+
+    if (loading) {
+        return (
+            <div style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <Spin size="large" tip="시스템 로딩중..." />
+            </div>
+        );
+    }
 
     return (
         <Layout style={{ minHeight: '100vh' }}>
-            <Sider trigger={null} collapsible collapsed={collapsed} style={{ background: '#001529' }}>
-                <div style={{ 
-                    height: 64, 
-                    margin: 16, 
-                    background: 'rgba(255, 255, 255, 0.1)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    color: 'white',
-                    fontWeight: 'bold',
-                    fontSize: collapsed ? '10px' : '16px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden'
-                }}>
-                    {collapsed ? 'WMS' : 'GLOBAL 3PL'}
+            <Sider 
+                collapsible 
+                collapsed={collapsed} 
+                onCollapse={setCollapsed}
+                theme="dark" 
+                width={240}
+            >
+                <div style={{ height: 64, margin: 16, display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize: collapsed ? '12px' : '18px', background:'rgba(255,255,255,0.1)', borderRadius: 6 }}>
+                    {collapsed ? 'WMS' : 'GLOBAL 3PL WMS'}
                 </div>
-                <Menu
-                    theme="dark"
-                    mode="inline"
-                    selectedKeys={[location.pathname]}
+                <Menu 
+                    theme="dark" 
+                    mode="inline" 
+                    selectedKeys={[getSelectedKey()]} 
+                    defaultOpenKeys={['inventory_group']}
                     onClick={handleMenuClick}
-                    items={items}
+                    items={[
+                        { key: 'dashboard', icon: <AppstoreOutlined />, label: '대시보드' },
+                        { key: 'order-entry', icon: <FileTextOutlined />, label: '주문 접수 (CBT)' },
+                        // 관리자만 보이는 메뉴
+                        isAdmin ? { key: 'order-process', icon: <RocketOutlined style={{color:'#4096ff'}} />, label: '출고 관리 (지시/검수)' } : null,
+                        { 
+                            key: 'inventory_group', 
+                            icon: <ShopOutlined />, 
+                            label: '재고 관리',
+                            children: [
+                                { key: 'inventory', label: '실시간 재고' },
+                                { key: 'history', label: '재고 수불부' },
+                            ] 
+                        },
+                        { key: 'inbound', icon: <ImportOutlined />, label: '입고 관리' },
+                        { type: 'divider' },
+                        { key: 'settings', icon: <SettingOutlined />, label: '설정', disabled: true },
+                    ]}
                 />
             </Sider>
+
             <Layout>
-                <Header style={{ padding: 0, background: token.colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 20 }}>
-                    <Button
-                        type="text"
-                        icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                        onClick={() => setCollapsed(!collapsed)}
-                        style={{
-                            fontSize: '16px',
-                            width: 64,
-                            height: 64,
-                        }}
-                    />
-                    <div style={{display:'flex', gap: 15, alignItems:'center'}}>
-                        <span style={{color: '#666'}}>마이커머스 님</span>
-                        {/* ★★★ 여기에 onClick 이벤트를 연결했습니다! ★★★ */}
-                        <Button 
-                            icon={<LogoutOutlined />} 
-                            danger 
-                            size="small" 
-                            onClick={handleLogout} // 클릭하면 로그아웃 실행
-                        >
-                            나가기
-                        </Button>
+                <Header style={{ padding: '0 24px', background: colorBgContainer, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{fontWeight: 'bold', fontSize: '16px'}}>
+                        {/* 현재 페이지 제목을 표시해주면 더 좋음 */}
+                        <GlobalOutlined style={{marginRight:8, color:'#1890ff'}} />
+                        CBT 통합 물류 시스템 v2.0
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {isAdmin && <Tag color="geekblue">관리자 모드</Tag>}
+                        <div style={{textAlign:'right', lineHeight:'1.3'}}>
+                            <span style={{fontWeight:'600'}}>{customerName || '방문자'}</span> 님
+                            <div style={{fontSize:'12px', color:'#888'}}>{userEmail}</div>
+                        </div>
+                        <Button onClick={handleLogout} icon={<LogoutOutlined />} type="text" danger>나가기</Button>
                     </div>
                 </Header>
-                <Content
-                    style={{
-                        margin: '24px 16px',
-                        padding: 24,
-                        minHeight: 280,
-                        background: token.colorBgContainer,
-                        borderRadius: token.borderRadiusLG,
-                        overflow: 'auto'
-                    }}
-                >
-                    {children}
+
+                <Content style={{ margin: '16px 16px' }}>
+                    <div style={{ padding: 24, minHeight: 360, background: colorBgContainer, borderRadius: borderRadiusLG }}>
+                        {children}
+                    </div>
                 </Content>
+                
+                <Layout.Footer style={{ textAlign: 'center', color:'#888', fontSize:'12px' }}>
+                    WMS ©2025 Created for Global 3PL Business
+                </Layout.Footer>
             </Layout>
         </Layout>
     );
