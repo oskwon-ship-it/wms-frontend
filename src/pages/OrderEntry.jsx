@@ -38,20 +38,21 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐(${apiRegion}) 주문을 수집합니다...`, 1);
+            message.loading(`큐텐(${apiRegion}) 진단 모드 실행 중...`, 1);
 
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
             const jsonData = await response.json();
 
-            // 에러 체크
+            // 에러 발생 시 디버깅 정보 표시
             if (!response.ok || (jsonData.ResultCode !== undefined && jsonData.ResultCode !== 0)) {
-                throw new Error(jsonData.ResultMsg || jsonData.error || "알 수 없는 오류");
+                // 에러 메시지와 함께 날짜 정보가 넘어옵니다.
+                throw new Error(jsonData.error || jsonData.ResultMsg || "알 수 없는 오류");
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
             
             if (!qoo10Orders || qoo10Orders.length === 0) {
-                message.info('최근 3일간 신규 주문(배송요청)이 없습니다.');
+                message.info('조건에 맞는 주문이 없습니다.');
                 setLoading(false);
                 return;
             }
@@ -80,15 +81,19 @@ const OrderEntry = () => {
 
         } catch (error) {
             console.error('API Error:', error);
-            // 에러 내용을 화면에 명확하게 표시
+            // ★★★ 에러 팝업에 날짜 정보를 크게 띄웁니다 ★★★
             Modal.error({
-                title: '연동 실패',
+                title: '원인 파악용 에러 메시지',
+                width: 500,
                 content: (
                     <div>
-                        <p>큐텐 서버 메시지:</p>
-                        <pre style={{background:'#eee', padding:10, borderRadius:5, whiteSpace:'pre-wrap'}}>
-                            {error.message}
-                        </pre>
+                        <p>서버가 실제로 보낸 데이터를 확인해주세요:</p>
+                        <div style={{background:'#ffebee', padding:15, borderRadius:5, border:'1px solid #ffccc7'}}>
+                            <b>{error.message}</b>
+                        </div>
+                        <p style={{marginTop:10, fontSize:12, color:'#666'}}>
+                            * 위 메시지(특히 [전송값: ...] 부분)를 캡처해서 보여주세요.
+                        </p>
                     </div>
                 )
             });
@@ -135,7 +140,7 @@ const OrderEntry = () => {
             
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
-                    <Alert message="안정적인 API(GetShippingInfo)로 접속합니다." type="success" showIcon />
+                    <Alert message="에러 원인 진단 모드입니다." type="warning" showIcon />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
