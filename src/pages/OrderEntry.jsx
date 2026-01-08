@@ -15,7 +15,8 @@ const OrderEntry = () => {
     const [activeTab, setActiveTab] = useState('new'); 
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
-    const [apiRegion, setApiRegion] = useState('JP'); // 기본값 JP지만 서버가 알아서 다 테스트함
+    // region은 이제 서버가 알아서 하므로 UI에서만 보여주기용
+    const [apiRegion, setApiRegion] = useState('JP'); 
 
     const fetchOrders = async () => {
         setLoading(true);
@@ -38,52 +39,72 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐 서버와 통신 중... (JP/SG 자동 탐색)`, 1);
+            message.loading(`판매내역 조회 중... (서버 자동 탐색)`, 1);
 
-            // region 파라미터는 이제 장식입니다. 서버가 알아서 다 찔러봅니다.
-            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
+            const response = await fetch(`/api/qoo10?key=${apiKey}`);
             const jsonData = await response.json();
 
             // 에러 체크
             if (jsonData.ResultCode !== 0) {
-                // 실패 메시지 표시
                 Modal.error({
                     title: '연동 실패',
-                    content: `큐텐 서버 응답: ${jsonData.ResultMsg} (Code: ${jsonData.ResultCode})`
+                    content: (
+                        <div>
+                            <p>모든 서버 접속 시도 결과:</p>
+                            <p style={{color:'red', fontWeight:'bold'}}>{jsonData.ResultMsg}</p>
+                            <p>에러 코드: {jsonData.ResultCode}</p>
+                            {jsonData.connected_server && <p>응답한 서버: {jsonData.connected_server}</p>}
+                        </div>
+                    )
                 });
                 setLoading(false);
                 return;
             }
 
+            // 성공!
             const qoo10Orders = jsonData.ResultObject || [];
-            
-            if (!qoo10Orders || qoo10Orders.length === 0) {
-                message.info('최근 5일간 신규 주문(배송요청)이 없습니다.');
-                setLoading(false);
-                return;
+            const connectedServer = jsonData.connected_server || '알 수 없음';
+
+            // 결과 안내 팝업
+            Modal.success({
+                title: '연동 성공!',
+                content: (
+                    <div>
+                        <p>✅ <b>{connectedServer}</b> 서버와 연결되었습니다.</p>
+                        <p>📦 조회된 판매 내역: <b>{qoo10Orders.length}건</b></p>
+                        <p>(이 방식이 확인되었으니, 이제 주문 수집도 가능합니다.)</p>
+                    </div>
+                )
+            });
+
+            // 데이터가 있으면 저장 시도 (옵션)
+            if (qoo10Orders.length > 0) {
+                // DB 저장 로직 (판매내역조회 데이터 매핑)
+                const formattedOrders = qoo10Orders.map(item => ({
+                    platform_name: 'Qoo10',
+                    platform_order_id: String(item.PackNo),
+                    order_number: String(item.OrderNo),
+                    customer: item.Receiver || item.ReceiverName || item.Buyer,
+                    product: item.ItemTitle,
+                    barcode: item.SellerItemCode || 'BARCODE-MISSING',
+                    quantity: parseInt(item.OrderQty, 10),
+                    country_code: apiRegion,
+                    status: (item.ShippingStatus === '배송요청' || item.Status === '2') ? '처리대기' : '확인필요',
+                    process_status: '접수',
+                    shipping_type: '택배',
+                    created_at: new Date()
+                }));
+                
+                // 신규만 필터링해서 저장
+                const newOrders = formattedOrders.filter(o => o.status === '처리대기');
+                if (newOrders.length > 0) {
+                    await supabase.from('orders').insert(newOrders);
+                    message.success(`${newOrders.length}건의 신규 주문을 저장했습니다.`);
+                    fetchOrders();
+                }
             }
-
-            const formattedOrders = qoo10Orders.map(item => ({
-                platform_name: 'Qoo10',
-                platform_order_id: String(item.PackNo),
-                order_number: String(item.OrderNo),
-                customer: item.ReceiverName || item.Receiver,
-                product: item.ItemTitle,
-                barcode: item.SellerItemCode || 'BARCODE-MISSING',
-                quantity: parseInt(item.OrderQty, 10),
-                country_code: apiRegion, 
-                status: '처리대기',
-                process_status: '접수',
-                shipping_type: '택배',
-                created_at: new Date()
-            }));
-
-            const { error } = await supabase.from('orders').insert(formattedOrders);
-            if (error) throw error;
-
-            message.success(`성공! ${formattedOrders.length}건을 저장했습니다.`);
+            
             setIsApiModalVisible(false);
-            fetchOrders();
 
         } catch (error) {
             console.error('API Error:', error);
@@ -132,27 +153,23 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="API 자동 연결" 
-                        description="일본(JP)과 싱가포르(SG) 서버를 자동으로 탐색합니다."
-                        type="success" 
+                        message="판매내역 조회(테스트)" 
+                        description="3개의 서버(JP_API, JP_WWW, SG)를 모두 탐색하여 연결을 확인합니다."
+                        type="info" 
                         showIcon 
                         icon={<SafetyCertificateOutlined />}
                     />
                     
-                    <div>
-                        <label style={{fontWeight:'bold', display:'block', marginBottom: 5}}>API Key 입력</label>
-                        <Input.Password 
-                            prefix={<KeyOutlined />} 
-                            placeholder="QSM에서 발급받은 API Key를 붙여넣으세요" 
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                        />
-                        <div style={{fontSize: 12, color: '#999', marginTop: 5}}>
-                            * 국가 선택 불필요 (자동 감지)
-                        </div>
-                    </div>
+                    <Input.Password 
+                        prefix={<KeyOutlined />} 
+                        placeholder="API Key 입력" 
+                        value={apiKey} 
+                        onChange={(e) => setApiKey(e.target.value)} 
+                    />
                     
-                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
+                    <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>
+                        연동 테스트 시작
+                    </Button>
                 </div>
             </Modal>
         </AppLayout>
