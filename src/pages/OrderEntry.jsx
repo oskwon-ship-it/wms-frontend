@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, ThunderboltOutlined
+    KeyOutlined, CheckCircleOutlined, HistoryOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -29,60 +29,45 @@ const OrderEntry = () => {
 
     const handleRealApiSync = async () => {
         if (!apiKey) {
-            message.warning('API Key를 입력해주세요!');
+            alert('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        message.loading("api.qoo10.jp 접속 중...", 1);
+        message.loading("성공했던 방식(v1)으로 접속 중...", 1);
 
         try {
             const response = await fetch(`/api/qoo10?key=${encodeURIComponent(apiKey)}`);
             const jsonData = await response.json();
 
-            // 1. 서버 통신 에러 체크
             if (jsonData.error) {
-                Modal.error({ 
-                    title: '연결 실패', 
-                    content: `서버 응답: ${jsonData.details || jsonData.error}` 
-                });
+                alert(`에러: ${jsonData.error}\n${jsonData.details || ''}`);
                 setLoading(false);
                 return;
             }
 
-            // 2. API 결과 분석
             const apiResult = jsonData.data;
             
-            // ResultCode 0이면 성공
-            if (apiResult.ResultCode === 0) {
+            // ResultCode 0 = 성공
+            if (apiResult.ResultCode === 0 || apiResult.ResultCode === -10001) { // -10001이 뜨더라도 연결은 된 것임
+                
+                // 데이터 추출 시도
                 let qoo10Orders = [];
                 if (apiResult.ResultObject) {
-                    qoo10Orders = apiResult.ResultObject;
-                } else if (Array.isArray(apiResult.ResultObject)) {
-                     qoo10Orders = apiResult.ResultObject;
+                    qoo10Orders = Array.isArray(apiResult.ResultObject) ? apiResult.ResultObject : [apiResult.ResultObject];
                 }
 
-                if (!qoo10Orders || qoo10Orders.length === 0) {
-                    // ★ 주문이 0건이어도 성공 팝업 띄움!
+                if (apiResult.ResultCode === 0 && (!qoo10Orders || qoo10Orders.length === 0)) {
                     Modal.success({
-                        title: 'API 연동 성공! ✅',
-                        content: (
-                            <div>
-                                <p><b>ResultCode: 0 (정상)</b></p>
-                                <p>서버 연결에 성공했습니다.</p>
-                                <p>현재 <b>'배송요청(신규)'</b> 상태인 주문이 없습니다.</p>
-                                <p style={{color:'#999', fontSize:12}}>
-                                    (테스트 폼 결과와 동일: "SUCCESS. But No Result")
-                                </p>
-                            </div>
-                        )
+                        title: '연결 성공! (주문 없음)',
+                        content: '서버와 정상적으로 연결되었습니다!\n현재 배송요청 상태인 주문이 없습니다.'
                     });
-                } else {
-                    const formattedOrders = qoo10Orders.map(item => ({
+                } else if (qoo10Orders.length > 0) {
+                     const formattedOrders = qoo10Orders.map(item => ({
                         platform_name: 'Qoo10',
                         platform_order_id: String(item.PackNo || item.OrderNo),
                         order_number: String(item.OrderNo),
-                        customer: item.ReceiverName || item.Receiver, 
+                        customer: item.ReceiverName || item.Receiver || '고객', 
                         product: item.ItemTitle || item.ItemName,
                         barcode: item.SellerItemCode || 'BARCODE-MISSING',
                         quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
@@ -98,10 +83,16 @@ const OrderEntry = () => {
                     await supabase.from('orders').insert(formattedOrders);
                     
                     Modal.success({
-                        title: '주문 수집 완료! 🎉',
-                        content: `총 ${formattedOrders.length}건의 주문을 가져왔습니다.`
+                        title: '주문 수집 성공! 🎉',
+                        content: `총 ${formattedOrders.length}건을 가져왔습니다.`
                     });
                     fetchOrders();
+                } else {
+                    // 혹시 실패 메시지가 왔을 경우
+                     Modal.warning({
+                        title: '연결은 됐으나...',
+                        content: `큐텐 응답: ${apiResult.ResultMsg} (Code: ${apiResult.ResultCode})`
+                    });
                 }
                 setIsApiModalVisible(false);
 
@@ -113,7 +104,7 @@ const OrderEntry = () => {
             }
 
         } catch (error) {
-            Modal.error({ title: '시스템 에러', content: error.message });
+            alert(`시스템 에러: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -158,11 +149,11 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="최종 완성 (api.qoo10.jp)" 
-                        description="봇 차단을 우회하는 공식 API 주소로 접속합니다."
+                        message="성공했던 방식 (v1) 복구" 
+                        description="api.qoo10.jp 서버에 구형 파라미터(Search_Sdate)로 접속합니다."
                         type="success" 
                         showIcon 
-                        icon={<ThunderboltOutlined />}
+                        icon={<HistoryOutlined />}
                     />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
