@@ -11,17 +11,11 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ error: 'API Key is missing' }), { status: 400 });
   }
 
-  // ★★★ [해결 핵심 1] "어제"까지만 조회 (시차 문제 방지)
-  // 서버 시간이 한국보다 느릴 경우 '오늘' 날짜를 미래로 인식해 에러가 납니다.
+  // 1. 날짜 설정 (판매내역조회는 YYYY-MM-DD 형식을 잘 받습니다)
   const now = new Date();
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1); // 종료일: 어제
-  
-  const past = new Date(now);
-  past.setDate(now.getDate() - 7); // 시작일: 7일 전
+  const past = new Date();
+  past.setDate(now.getDate() - 14); // 2주 전부터 조회
 
-  // ★★★ [해결 핵심 2] YYYY-MM-DD (하이픈 필수)
-  // 아까 보내주신 캡처에서 20260101 형식이 거절당했으므로, 하이픈이 정답입니다.
   const formatDate = (date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -30,27 +24,20 @@ export default async function handler(request) {
   };
 
   const sDate = formatDate(past);
-  const eDate = formatDate(yesterday); // 안전하게 어제 날짜 사용
+  const eDate = formatDate(now);
 
-  // 접속 주소
+  // 2. 타겟 URL
   const host = region === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
   const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi`;
 
-  // 데이터 조립 (POST)
+  // 3. 데이터 조립 (SellingReport 사용)
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
-  bodyData.append('method', 'ShippingBasic.GetShippingInfo');
-
-  // ★★★ [물샐틈없는 파라미터 세팅]
-  // 1. 배송상태: 2 (배송요청)
-  bodyData.append('stat', '2'); 
+  bodyData.append('method', 'ShippingBasic.GetSellingReportDetailList');
   
-  // 2. 검색조건: 2 (결제일 기준 - 가장 확실함)
-  bodyData.append('search_condition', '2'); 
-
-  // 3. 날짜: 소문자/대문자 동시 전송 (서버가 알아서 골라 씀)
-  bodyData.append('search_sdate', sDate);
-  bodyData.append('search_edate', eDate);
+  // 필수 파라미터 (PDF 문서 기준)
+  bodyData.append('SearchCondition', '1'); // 1: 결제일
+  bodyData.append('Currency', 'JPY');      
   bodyData.append('SearchSdate', sDate);
   bodyData.append('SearchEdate', eDate);
 
@@ -58,9 +45,7 @@ export default async function handler(request) {
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
-        'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'
       },
       body: bodyData.toString()
     });
@@ -71,17 +56,15 @@ export default async function handler(request) {
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      throw new Error(`응답 형식 오류: ${responseText.substring(0, 100)}`);
+      throw new Error(`JSON 파싱 실패: ${responseText.substring(0, 100)}`);
     }
 
-    // 결과 확인
-    if (data.ResultCode !== 0) {
-        // 실패 시 디버깅 정보 포함해서 에러 던짐
-        const debugInfo = `(전송날짜: ${sDate} ~ ${eDate})`;
-        throw new Error(`${data.ResultMsg} ${debugInfo}`);
-    }
-
-    return new Response(JSON.stringify(data), {
+    // ★★★ [핵심] 성공이든 실패든, 구조 파악을 위해 무조건 데이터를 보냅니다.
+    // ResultCode를 체크하지 않고 그대로 프론트엔드로 넘겨서 눈으로 확인합니다.
+    return new Response(JSON.stringify({
+        raw_data: data, // 원본 데이터 통째로 전송
+        debug_date: `${sDate} ~ ${eDate}`
+    }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

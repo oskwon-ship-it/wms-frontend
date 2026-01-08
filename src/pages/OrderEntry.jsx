@@ -5,7 +5,7 @@ import {
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
     ShoppingCartOutlined, FileExcelOutlined,
     KeyOutlined, SafetyCertificateOutlined,
-    GlobalOutlined 
+    GlobalOutlined, CheckCircleOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -38,50 +38,34 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐(${apiRegion}) 주문을 수집합니다...`, 1);
+            message.loading(`큐텐(${apiRegion}) 서버 응답 분석 중...`, 1);
 
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
             const jsonData = await response.json();
 
-            // 에러 체크
-            if (!response.ok || (jsonData.ResultCode !== undefined && jsonData.ResultCode !== 0)) {
-                throw new Error(jsonData.error || jsonData.ResultMsg || "알 수 없는 오류");
-            }
+            // ★★★ 서버 응답 원본 확인 팝업 ★★★
+            // 이 팝업 내용을 캡처해서 보여주시면 바로 코드를 완성할 수 있습니다.
+            Modal.info({
+                title: '서버 응답 데이터 확인',
+                width: 600,
+                content: (
+                    <div style={{maxHeight: '400px', overflow: 'auto'}}>
+                        <p>큐텐 서버가 보낸 원본 데이터입니다:</p>
+                        <pre style={{background:'#333', color:'#fff', padding:10, borderRadius:5, fontSize:11}}>
+                            {JSON.stringify(jsonData.raw_data, null, 2)}
+                        </pre>
+                        <p style={{marginTop:10}}>* 위 내용을 캡처하거나 복사해서 알려주세요!</p>
+                    </div>
+                ),
+                onOk: () => {}
+            });
 
-            const qoo10Orders = jsonData.ResultObject || [];
-            
-            if (!qoo10Orders || qoo10Orders.length === 0) {
-                message.info('최근 1주일간 신규 주문(배송요청)이 없습니다.');
-                setLoading(false);
-                return;
-            }
-
-            const formattedOrders = qoo10Orders.map(item => ({
-                platform_name: 'Qoo10',
-                platform_order_id: String(item.PackNo),
-                order_number: String(item.OrderNo),
-                customer: item.ReceiverName || item.Receiver,
-                product: item.ItemTitle,
-                barcode: item.SellerItemCode || 'BARCODE-MISSING',
-                quantity: parseInt(item.OrderQty, 10),
-                country_code: apiRegion, 
-                status: '처리대기',
-                process_status: '접수',
-                shipping_type: '택배',
-                created_at: new Date()
-            }));
-
-            const { error } = await supabase.from('orders').insert(formattedOrders);
-            if (error) throw error;
-
-            message.success(`성공! ${formattedOrders.length}건을 저장했습니다.`);
-            setIsApiModalVisible(false);
-            fetchOrders();
+            // 일단 성공 처리 (데이터 분석이 우선이므로)
+            setLoading(false);
 
         } catch (error) {
             console.error('API Error:', error);
-            message.error(`연동 실패: ${error.message}`);
-        } finally {
+            message.error(`통신 실패: ${error.message}`);
             setLoading(false);
         }
     };
@@ -124,7 +108,13 @@ const OrderEntry = () => {
             
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
-                    <Alert message="안정적인 API(GetShippingInfo)로 접속합니다." type="success" showIcon />
+                    <Alert 
+                        message="판매내역조회(SellingReport) 분석 모드" 
+                        description="날짜 에러가 없는 이 방식으로 데이터를 직접 확인합니다."
+                        type="info" 
+                        showIcon 
+                        icon={<CheckCircleOutlined />}
+                    />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
