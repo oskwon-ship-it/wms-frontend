@@ -34,23 +34,43 @@ const OrderEntry = () => {
         }
 
         setLoading(true);
-        message.loading("큐텐 최신 API(v3)로 주문을 수집합니다...", 1);
+        message.loading("Qoo10 v3 API 접속 중...", 1);
 
         try {
-            const response = await fetch(`/api/qoo10?key=${apiKey}`);
+            // encodeURIComponent로 키에 특수문자가 있어도 안전하게 전송
+            const response = await fetch(`/api/qoo10?key=${encodeURIComponent(apiKey)}`);
+            
+            // HTTP 상태 코드가 200이 아니면 에러 처리
+            if (!response.ok) {
+                const errData = await response.json();
+                Modal.error({
+                    title: `서버 통신 오류 (${response.status})`,
+                    content: (
+                        <div>
+                            <p>Qoo10 서버 또는 연결 과정에서 오류가 발생했습니다.</p>
+                            <p style={{color:'red', background:'#f0f0f0', padding:10, borderRadius:5}}>
+                                {JSON.stringify(errData)}
+                            </p>
+                        </div>
+                    )
+                });
+                setLoading(false);
+                return;
+            }
+
             const jsonData = await response.json();
 
-            // 1. 에러 체크
+            // 1. 큐텐 내부 에러 체크
             if (jsonData.data && jsonData.data.ResultCode && jsonData.data.ResultCode < 0) {
                  Modal.error({
-                    title: 'API 오류',
+                    title: 'API 결과 오류',
                     content: `코드: ${jsonData.data.ResultCode}\n메시지: ${jsonData.data.ResultMsg}`
                 });
                 setLoading(false);
                 return;
             }
 
-            // 2. 데이터 추출 (v3는 보통 ResultObject에 깔끔하게 줍니다)
+            // 2. 데이터 추출
             let qoo10Orders = [];
             const rawData = jsonData.data;
 
@@ -67,16 +87,15 @@ const OrderEntry = () => {
                     content: 'v3 API 연결에 성공했습니다! 다만 현재 배송요청(Stat:2) 상태인 주문이 없습니다.'
                 });
             } else {
-                // 4. DB 저장 (v3 데이터 필드 매핑)
+                // 4. DB 저장
                 const formattedOrders = qoo10Orders.map(item => ({
                     platform_name: 'Qoo10',
                     platform_order_id: String(item.PackNo || item.OrderNo),
                     order_number: String(item.OrderNo),
-                    customer: item.ReceiverName || item.Receiver || '고객', // v3는 ReceiverName일 확률 높음
+                    customer: item.ReceiverName || item.Receiver || '고객', 
                     product: item.ItemTitle || item.ItemName,
                     barcode: item.SellerItemCode || 'BARCODE-MISSING',
                     quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
-                    // v3는 주소가 명확하게 옵니다
                     shipping_address: item.ReceiverAddr || item.ShippingAddr || '',
                     shipping_memo: item.ShippingMsg || '',
                     country_code: 'JP', 
@@ -142,8 +161,8 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="최신 API(v3) 적용 완료" 
-                        description="사장님이 찾으신 v3 문서 규격대로 연결합니다. (가장 정확한 방식)"
+                        message="최신 API(v3) URL 적용" 
+                        description="Method가 포함된 URL과 v3 파라미터로 접속합니다."
                         type="success" 
                         showIcon 
                         icon={<ThunderboltOutlined />}

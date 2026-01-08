@@ -7,14 +7,13 @@ export default async function handler(request) {
   const apiKey = searchParams.get('key');
 
   if (!apiKey) {
-    return new Response(JSON.stringify({ result: 'API Key 없음' }), { status: 400 });
+    return new Response(JSON.stringify({ result: 'API Key가 입력되지 않았습니다.' }), { status: 400 });
   }
 
-  // 1. 날짜 설정 (YYYYMMDD) - v3도 이 형식을 씁니다.
-  // 조회 기간을 넉넉하게 30일로 잡습니다.
+  // 1. 날짜 설정 (YYYYMMDD)
   const now = new Date();
   const past = new Date();
-  past.setDate(now.getDate() - 30); 
+  past.setDate(now.getDate() - 30); // 30일 조회
 
   const formatDate = (date) => {
     const y = date.getFullYear();
@@ -26,20 +25,25 @@ export default async function handler(request) {
   const sDate = formatDate(past);
   const eDate = formatDate(now);
 
-  // 2. 타겟 URL (일본 API 서버)
-  const targetUrl = 'https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi';
+  // 2. ★★★ 타겟 URL 수정 (v3는 URL에 메서드가 포함됨) ★★★
+  // 테스트 폼에 적힌 그대로 주소 뒤에 메서드를 붙입니다.
+  const targetUrl = 'https://api.qoo10.jp/GMKT.INC.Front.QAPIService/ebayjapan.qapi/ShippingBasic.GetShippingInfo_v3';
 
-  // 3. ★★★ [핵심] v3 버전으로 파라미터 완전 교체 ★★★
-  // 사장님이 보내주신 이미지 내용 그대로 적용합니다.
+  // 3. 파라미터 조립 (v3 표준)
   const bodyData = new URLSearchParams();
-  bodyData.append('key', apiKey);
-  bodyData.append('method', 'ShippingBasic.GetShippingInfo_v3'); // v3 사용!
   
-  // 스크린샷에 나온 파라미터 명칭 준수 (대소문자 정확히)
-  bodyData.append('ShippingStatus', '2');    // 2: 배송요청 (신규주문)
+  // 키를 두 가지 이름으로 다 보냅니다 (혹시 몰라서)
+  bodyData.append('key', apiKey);
+  bodyData.append('CertificationKey', apiKey);
+
+  // 메서드 파라미터는 URL에 있으니 제거하거나, 중복 전송해도 무관하지만 v3 스펙 준수
+  // bodyData.append('method', '...'); // 이건 뺍니다.
+
+  // 사장님이 캡처해주신 v3 파라미터 그대로 적용
+  bodyData.append('ShippingStatus', '2');    // 배송요청 (신규주문)
   bodyData.append('SearchStartDate', sDate); // YYYYMMDD
   bodyData.append('SearchEndDate', eDate);   // YYYYMMDD
-  bodyData.append('SearchCondition', '1');   // 1: 주문일 기준
+  bodyData.append('SearchCondition', '1');   // 주문일 기준
 
   try {
     const response = await fetch(targetUrl, {
@@ -52,6 +56,16 @@ export default async function handler(request) {
     });
 
     const text = await response.text();
+    
+    // 큐텐 서버가 에러(400, 500 등)를 냈을 때
+    if (!response.ok) {
+         return new Response(JSON.stringify({ 
+            error: "Qoo10 서버 에러", 
+            status: response.status,
+            details: text 
+        }), { status: response.status });
+    }
+
     let json;
     try {
         json = JSON.parse(text);
