@@ -16,23 +16,30 @@ export default async function handler(request) {
     });
   }
 
-  // ★ [수정됨] PDF 문서에 따라 'api' 대신 'www' 도메인 사용
+  // ★★★ [수정 포인트] 사장님 PDF 문서에 따라 일본(JP) 도메인을 변경했습니다.
+  // 기존: https://api.qoo10.jp
+  // 변경: https://www.qoo10.jp (PDF 문서 내용 반영)
   const baseUrl = region === 'JP' ? 'https://www.qoo10.jp' : 'https://api.qoo10.sg';
+  
   const targetUrl = `${baseUrl}/GMKT.INC.Front.QAPIService/ebayjapan.qapi?key=${apiKey}&method=${method}&stat=2`;
 
   try {
     const response = await fetch(targetUrl);
 
-    // 응답 내용 먼저 텍스트로 확인 (에러 디버깅용)
+    // 응답 내용 먼저 텍스트로 확인 (디버깅용)
     const responseText = await response.text();
 
-    // JSON인지 확인
+    // 큐텐이 HTML 에러 페이지(Can't find 등)를 주는지 확인
+    if (responseText.includes('Can\'t find') || responseText.includes('Error')) {
+       throw new Error(`주소 오류(404): 큐텐 서버 주소가 맞지 않습니다. (${baseUrl})`);
+    }
+
+    // JSON 변환 시도
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (e) {
-      // JSON이 아니면(Can't find 등) 에러로 처리
-      throw new Error(`Qoo10 응답 오류 (${response.status}): ${responseText.substring(0, 100)}...`);
+      throw new Error(`응답 형식 오류: ${responseText.substring(0, 50)}...`);
     }
 
     if (!response.ok) {
