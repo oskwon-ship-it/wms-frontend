@@ -11,35 +11,42 @@ export default async function handler(request) {
     return new Response(JSON.stringify({ error: 'API Key is missing' }), { status: 400 });
   }
 
-  // 1. 날짜 계산 (최근 1개월) - PDF 표준: YYYY-MM-DD
+  // ★★★ [해결의 열쇠 1] 조회 기간을 "3일"로 단축
+  // 큐텐 구형 API는 기간이 길면(예: 30일) 에러를 뱉습니다.
   const now = new Date();
   const past = new Date();
-  past.setDate(now.getDate() - 30); 
+  past.setDate(now.getDate() - 3); // 안전하게 최근 3일만 조회
 
+  // ★★★ [해결의 열쇠 2] YYYYMMDD (하이픈 제거)
   const formatDate = (date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
     const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`; 
+    return `${y}${m}${d}`; 
   };
 
   const sDate = formatDate(past);
   const eDate = formatDate(now);
 
-  // 2. 타겟 설정 (판매내역조회 기능 사용)
+  // 접속 주소
   const host = region === 'JP' ? 'https://api.qoo10.jp' : 'https://api.qoo10.sg';
   const targetUrl = `${host}/GMKT.INC.Front.QAPIService/ebayjapan.qapi`;
 
-  // 3. 데이터 조립 (POST) - PDF 완벽 준수
+  // 데이터 조립 (POST)
   const bodyData = new URLSearchParams();
   bodyData.append('key', apiKey);
-  bodyData.append('method', 'ShippingBasic.GetSellingReportDetailList');
+  bodyData.append('method', 'ShippingBasic.GetShippingInfo'); // 가장 안정적인 v1
 
-  // 필수 파라미터
-  bodyData.append('SearchCondition', '1'); // 1: 결제일 기준
-  bodyData.append('Currency', 'JPY');      // 통화 (필수)
-  bodyData.append('SearchSdate', sDate);   // 시작일 (YYYY-MM-DD)
-  bodyData.append('SearchEdate', eDate);   // 종료일 (YYYY-MM-DD)
+  // ★★★ [파라미터 완전 정복]
+  // 1. 배송상태: 2 (배송요청)
+  bodyData.append('stat', '2'); 
+  
+  // 2. 검색조건: 1 (주문일 기준 - 가장 기본)
+  bodyData.append('search_condition', '1'); 
+
+  // 3. 날짜: YYYYMMDD
+  bodyData.append('search_sdate', sDate);
+  bodyData.append('search_edate', eDate);
 
   try {
     const response = await fetch(targetUrl, {
@@ -65,30 +72,12 @@ export default async function handler(request) {
       throw new Error(`데이터 파싱 실패: ${responseText.substring(0, 100)}`);
     }
 
-    // ★★★ [스마트 탐색] 결과값이 어디에 있는지 자동으로 찾습니다.
-    // 보통 ResultObject에 있지만, 가끔 다른 이름으로 올 때가 있습니다.
-    let resultList = [];
-    
-    if (Array.isArray(data.ResultObject)) {
-        resultList = data.ResultObject;
-    } else if (data.ResultObject && Array.isArray(data.ResultObject.Table)) {
-        resultList = data.ResultObject.Table; // 가끔 Table 안에 숨어있음
-    } else if (data.ResultObject && Array.isArray(data.ResultObject.OrderList)) {
-        resultList = data.ResultObject.OrderList;
-    }
-
-    // 성공했지만 리스트가 없는 경우 (빈 배열)
-    if (data.ResultCode === 0 && !resultList) {
-        resultList = [];
-    }
-
-    // 에러 체크: 리스트도 없고, ResultCode가 0도 아니면 에러
-    if (data.ResultCode !== 0 && (!resultList || resultList.length === 0)) {
+    // 결과 코드 확인 (0이 아니면 에러 메시지 반환)
+    if (data.ResultCode !== 0) {
         throw new Error(data.ResultMsg || `API 오류 (Code: ${data.ResultCode})`);
     }
 
-    // 찾은 리스트를 강제로 ResultObject에 넣어 반환
-    return new Response(JSON.stringify({ ResultCode: 0, ResultObject: resultList }), {
+    return new Response(JSON.stringify(data), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
