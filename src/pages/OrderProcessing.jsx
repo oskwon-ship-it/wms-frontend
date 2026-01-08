@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { Table, Button, Input, Space, Tag, Tabs, message, Card, Modal, List, Badge, Typography } from 'antd';
+import { Table, Button, Input, Space, Tag, message, Card, Modal, List, Typography } from 'antd';
 import { 
     BarcodeOutlined, PrinterOutlined, CheckCircleOutlined, 
-    RocketOutlined, SearchOutlined, ReloadOutlined, 
-    GlobalOutlined, ShoppingCartOutlined
+    ReloadOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 import dayjs from 'dayjs';
@@ -23,16 +22,16 @@ const OrderProcessing = () => {
     // 스캔 검수 모달
     const [isScanModalVisible, setIsScanModalVisible] = useState(false);
     const [scanBarcode, setScanBarcode] = useState('');
-    const [scanLog, setScanLog] = useState([]); // 검수 기록
+    const [scanLog, setScanLog] = useState([]); 
 
     const fetchOrders = async () => {
         setLoading(true);
-        // '처리대기' 상태인 주문만 가져오기 (출고해야 할 것들)
+        // ★ [수정됨] 테스트 편의를 위해 '최신 주문'이 맨 위로 오도록 변경 (ascending: false)
         const { data, error } = await supabase
             .from('orders')
             .select('*')
             .in('status', ['처리대기', '피킹중']) 
-            .order('created_at', { ascending: true }); // 오래된 주문부터 처리
+            .order('created_at', { ascending: false }); // 여기를 true -> false로 바꿨습니다!
 
         if (!error) setOrders(data || []);
         setLoading(false);
@@ -40,24 +39,24 @@ const OrderProcessing = () => {
 
     useEffect(() => { fetchOrders(); }, []);
 
-    // 1. 피킹 리스트 생성 (왕디엔통 스타일: 상품별 집계)
+    // 1. 피킹 리스트 생성 (왕디엔통 스타일)
     const handleCreatePickingList = () => {
         if (selectedRowKeys.length === 0) {
             message.warning('피킹할 주문을 먼저 선택해주세요!');
             return;
         }
 
-        // 선택된 주문들에서 상품별로 수량 합치기
         const selectedOrders = orders.filter(o => selectedRowKeys.includes(o.id));
         const summary = {};
 
         selectedOrders.forEach(order => {
+            // 바코드가 없으면 상품명으로 묶음
             const key = order.barcode || order.product;
             if (!summary[key]) {
                 summary[key] = {
                     product: order.product,
-                    barcode: order.barcode,
-                    location: 'A-01-01', // 로케이션은 나중에 DB 연동
+                    barcode: order.barcode || '(바코드 없음)',
+                    location: 'A-01-01', 
                     total_qty: 0,
                     orders_count: 0
                 };
@@ -70,9 +69,9 @@ const OrderProcessing = () => {
         setIsPickingModalVisible(true);
     };
 
-    // 2. 바코드 스캔 검수 처리
+    // 2. 바코드 스캔 검수
     const handleBarcodeScan = (e) => {
-        e.preventDefault(); // 엔터키 새로고침 방지
+        e.preventDefault(); 
         const code = scanBarcode.trim();
         if (!code) return;
 
@@ -83,8 +82,6 @@ const OrderProcessing = () => {
             setScanLog(prev => [{ time: new Date(), msg: `✅ [성공] ${targetOrder.product} 확인 / 주문번호: ${targetOrder.order_number}`, status: 'success' }, ...prev]);
             message.success('검수 완료! 송장이 출력됩니다.');
             
-            // DB 상태 업데이트 (처리대기 -> 출고완료)
-            // 실제로는 여기서 송장 API를 호출해야 함
             updateOrderStatus(targetOrder.id, '출고완료');
         } else {
             setScanLog(prev => [{ time: new Date(), msg: `❌ [실패] 해당 바코드(${code})의 대기 주문이 없습니다.`, status: 'error' }, ...prev]);
@@ -98,15 +95,15 @@ const OrderProcessing = () => {
         fetchOrders(); // 목록 갱신
     };
 
-    // 테이블 컬럼
     const columns = [
         { 
             title: '플랫폼', dataIndex: 'platform_name', width: 100,
             render: t => t === 'Shopee' ? <Tag color="orange">Shopee</Tag> : (t === 'Qoo10' ? <Tag color="red">Qoo10</Tag> : <Tag>수기</Tag>)
         },
-        { title: '국가', dataIndex: 'country_code', width: 80, render: t => <Tag color="blue">{t}</Tag> },
+        { title: '국가', dataIndex: 'country_code', width: 80, render: t => t ? <Tag color="blue">{t}</Tag> : '-' },
         { title: '주문번호', dataIndex: 'order_number', width: 180, render: t => <b>{t}</b> },
         { title: '상품명', dataIndex: 'product' },
+        { title: '바코드', dataIndex: 'barcode', render: t => <span style={{fontSize:12, color:'#888'}}>{t}</span> }, 
         { title: '수량', dataIndex: 'quantity', width: 80 },
         { title: '상태', dataIndex: 'status', width: 100, render: t => <Tag color="geekblue">{t}</Tag> }
     ];
