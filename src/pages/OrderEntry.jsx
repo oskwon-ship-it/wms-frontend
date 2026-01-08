@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Select, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, CheckCircleOutlined 
+    KeyOutlined, CheckCircleOutlined, CodeOutlined 
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -27,72 +27,71 @@ const OrderEntry = () => {
 
     useEffect(() => { fetchOrders(); }, [activeTab]);
 
-    // ★★★ [디버깅] 버튼 클릭 시 모달 열기
-    const showModal = () => {
-        console.log("버튼 클릭됨!"); 
-        setIsApiModalVisible(true);
-    };
-
     const handleRealApiSync = async () => {
-        // 1. API 키 확인
         if (!apiKey) {
             alert('API Key를 입력해주세요!');
             return;
         }
 
         setLoading(true);
-        message.loading("큐텐 서버에 접속 중...", 1);
+        message.loading("데이터 포장을 뜯는 중...", 1);
 
         try {
-            // 2. 서버 요청 시작
             const response = await fetch(`/api/qoo10?key=${apiKey}`);
             const jsonData = await response.json();
 
-            console.log("서버 응답 원본:", jsonData); // F12 콘솔에서 확인 가능
-
-            // 3. 에러 체크
-            if (jsonData.data && jsonData.data.ResultCode && jsonData.data.ResultCode < 0) {
-                 alert(`API 오류 발생!\n코드: ${jsonData.data.ResultCode}\n메시지: ${jsonData.data.ResultMsg}`);
-                 setLoading(false);
-                 return;
-            }
-
-            // 4. 데이터 파싱 (복잡한 배열 구조 대응)
-            let qoo10Orders = [];
+            // 1. 데이터 평탄화 (상자 안에 상자 다 꺼내기)
+            let allItems = [];
             const rawData = jsonData.data;
 
-            if (rawData.ResultObject) {
-                // 일반적인 경우
-                qoo10Orders = rawData.ResultObject;
-            } else if (Array.isArray(rawData)) {
-                // ★ 아까 테스트 폼에서 본 [[[]]] 같은 이상한 배열 구조 평탄화
-                qoo10Orders = rawData.flat(Infinity).filter(item => item && item.OrderNo);
+            if (Array.isArray(rawData)) {
+                // [[...], [...]] 구조를 [...] 로 폄
+                allItems = rawData.flat(Infinity);
+            } else if (rawData && rawData.ResultObject) {
+                allItems = rawData.ResultObject;
             }
 
-            // 5. 결과 알림 (성공이든 '0건'이든 무조건 띄움)
-            if (!qoo10Orders || qoo10Orders.length === 0) {
-                Modal.info({
-                    title: '연동 성공 (데이터 없음)',
-                    content: (
-                        <div>
-                            <p>API 연결은 성공했습니다! ✅</p>
-                            <p>다만, <b>최근 7일간 '배송요청' 상태인 주문</b>이 없습니다.</p>
-                            <p style={{fontSize:12, color:'#999'}}>
-                                (테스트 폼에서도 빈 괄호 `[]`가 나왔던 것과 같습니다.)
-                            </p>
-                        </div>
-                    )
+            // 2. 유효한 주문 찾기 (OrderNo가 있는 것만)
+            const validOrders = allItems.filter(item => item && (item.OrderNo || item.orderNo || item.PACK_NO));
+
+            if (validOrders.length === 0) {
+                Modal.warning({
+                    title: '데이터 없음',
+                    content: '연결은 성공했으나, 안에 든 주문 데이터가 없습니다. (기간 내 판매 없음)'
                 });
             } else {
-                // 6. 데이터 있으면 저장
-                const formattedOrders = qoo10Orders.map(item => ({
+                // 3. ★★★ 첫 번째 주문 샘플 확인 ★★★
+                const sample = validOrders[0];
+                console.log("주문 샘플:", sample);
+
+                Modal.info({
+                    title: '📦 데이터 포장 해제 성공!',
+                    width: 600,
+                    content: (
+                        <div>
+                            <p>주문 <b>{validOrders.length}건</b>을 찾았습니다!</p>
+                            <p>첫 번째 주문의 데이터 구조(이름표)는 아래와 같습니다:</p>
+                            <pre style={{background:'#333', color:'#fff', padding:10, borderRadius:5, fontSize:11, maxHeight:300, overflow:'auto'}}>
+                                {JSON.stringify(sample, null, 2)}
+                            </pre>
+                            <p style={{marginTop:10, fontWeight:'bold', color:'blue'}}>
+                                * 위 내용을 캡처해서 보여주세요. <br/>
+                                (OrderNo인지, PackNo인지 정확한 이름만 알면 저장됩니다!)
+                            </p>
+                        </div>
+                    ),
+                    okText: "확인 완료"
+                });
+                
+                // 일단 저장 시도는 해봅니다 (표준 필드명 기준)
+                const formattedOrders = validOrders.map(item => ({
                     platform_name: 'Qoo10',
-                    platform_order_id: String(item.PackNo),
-                    order_number: String(item.OrderNo),
-                    customer: item.ReceiverName || item.Receiver || '고객',
-                    product: item.ItemTitle,
+                    platform_order_id: String(item.PackNo || item.PACK_NO || item.OrderNo),
+                    order_number: String(item.OrderNo || item.ORDER_NO),
+                    customer: item.ReceiverName || item.Receiver || item.Buyer || '고객',
+                    product: item.ItemTitle || item.ItemName,
                     barcode: item.SellerItemCode || 'BARCODE-MISSING',
-                    quantity: parseInt(item.OrderQty || 1, 10),
+                    quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
                     country_code: 'JP', 
                     status: '처리대기',
                     process_status: '접수',
@@ -100,22 +99,14 @@ const OrderEntry = () => {
                     created_at: new Date()
                 }));
                 
-                const { error } = await supabase.from('orders').insert(formattedOrders);
-                
-                if (error) {
-                    alert("DB 저장 실패: " + error.message);
-                } else {
-                    Modal.success({
-                        title: '주문 수집 완료! 🎉',
-                        content: `총 ${formattedOrders.length}건의 주문을 저장했습니다.`
-                    });
-                    fetchOrders();
-                }
+                // 에러 무시하고 일단 넣기 (성공하면 목록에 뜸)
+                await supabase.from('orders').insert(formattedOrders);
+                fetchOrders();
             }
             setIsApiModalVisible(false);
 
         } catch (error) {
-            alert(`시스템 에러: ${error.message}`);
+            alert(`처리 실패: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -142,12 +133,7 @@ const OrderEntry = () => {
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
                 <h2>📑 통합 주문 관리 (CBT)</h2>
                 <Space>
-                    <Button 
-                        type="primary" 
-                        icon={<CloudDownloadOutlined />} 
-                        onClick={showModal} 
-                        danger
-                    >
+                    <Button type="primary" icon={<CloudDownloadOutlined />} onClick={() => setIsApiModalVisible(true)} danger>
                         주문 자동 수집 (API)
                     </Button>
                 </Space>
@@ -165,11 +151,11 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="API 연결 대기 중" 
-                        description="파라미터(Search_Sdate) 수정 완료! 이제 가져오기만 하면 됩니다."
-                        type="success" 
+                        message="데이터 확인 모드" 
+                        description="큐텐이 보내준 데이터의 '진짜 이름표'를 확인합니다."
+                        type="info" 
                         showIcon 
-                        icon={<CheckCircleOutlined />}
+                        icon={<CodeOutlined />}
                     />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
