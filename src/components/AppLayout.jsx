@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Menu, Button, theme, message, Spin, Tag } from 'antd'; // Avatar 제거함
+import { Layout, Menu, Button, theme, message, Spin, Tag } from 'antd';
 import { 
-  LogoutOutlined, UserOutlined, AppstoreOutlined, 
-  FileTextOutlined, RocketOutlined, ShopOutlined, 
-  ImportOutlined, SettingOutlined, HistoryOutlined,
+  LogoutOutlined, 
+  AppstoreOutlined, // UserOutlined 제거함 (에러 주범)
+  FileTextOutlined, 
+  RocketOutlined, 
+  ShopOutlined, 
+  ImportOutlined, 
+  SettingOutlined, 
+  HistoryOutlined,
   GlobalOutlined 
 } from '@ant-design/icons';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -56,7 +61,7 @@ const AppLayout = ({ children }) => {
         const path = location.pathname;
         if (path === '/dashboard' || path === '/') return 'dashboard';
         if (path === '/order-entry' || path === '/orders') return 'order-entry';
-        if (path === '/qoo10') return 'qoo10'; // ★ 큐텐 활성화
+        if (path === '/qoo10') return 'qoo10'; 
         if (path === '/order-process') return 'order-process';
         if (path === '/inventory') return 'inventory';
         if (path === '/history') return 'history';
@@ -70,7 +75,7 @@ const AppLayout = ({ children }) => {
         
         if (e.key === 'dashboard') navigate('/');
         else if (e.key === 'order-entry') navigate('/orders');
-        else if (e.key === 'qoo10') navigate('/qoo10'); // ★ 큐텐 이동
+        else if (e.key === 'qoo10') navigate('/qoo10'); 
         else if (e.key === 'api-test') navigate('/api-test');
         else navigate(`/${e.key}`);
     };
@@ -105,7 +110,6 @@ const AppLayout = ({ children }) => {
                         { key: 'dashboard', icon: <AppstoreOutlined />, label: '대시보드' },
                         { key: 'order-entry', icon: <FileTextOutlined />, label: '주문 접수 (CBT)' },
                         
-                        // ★ 큐텐 메뉴
                         { key: 'qoo10', icon: <GlobalOutlined style={{color: '#ff4d4f'}} />, label: '큐텐 주문 현황' },
 
                         isAdmin ? { key: 'order-process', icon: <RocketOutlined style={{color:'#4096ff'}} />, label: '출고 관리 (지시/검수)' } : null,
