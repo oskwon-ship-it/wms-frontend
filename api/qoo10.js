@@ -13,7 +13,6 @@ export default async function handler(request) {
   }
 
   // ■ 날짜 자동 계산 (오늘 ~ 45일 전)
-  // * 큐텐 API는 검색 기간이 너무 길면 에러가 날 수 있으니 안전하게 45일로 설정
   const now = new Date();
   const past = new Date();
   past.setDate(now.getDate() - 45); 
@@ -61,11 +60,10 @@ export default async function handler(request) {
         }
       };
 
-      // 파라미터 조립
+      // 파라미터 조립 함수
       const addParams = (params) => {
         params.append('key', apiKey);
         
-        // GET 방식이 아닐 경우 메소드 추가
         if (candidate.type !== 'QUERY' && candidate.path.endsWith('qapi')) {
              params.append('method', method);
         } else if (candidate.type === 'QUERY') {
@@ -73,21 +71,16 @@ export default async function handler(request) {
         }
 
         if (method.includes('Shipping')) {
-            params.append('stat', '2'); // 배송요청 상태
+            // ★★★ [핵심 수정] "검색 기준" 추가 (이게 없어서 에러가 났습니다!)
+            // 1: 주문일, 2: 결제일, 3: 배송일
+            params.append('search_condition', '2'); // '결제일' 기준으로 조회 (가장 안전)
+            params.append('stat', '2');             // 배송요청 상태
 
-            // ★★★ [핵심 수정] 날짜 파라미터 '종합 선물세트'
-            // 큐텐 API 버전마다 이름이 달라서, 가능한 모든 변형을 다 보냅니다.
-            // 서버는 아는 것만 골라서 쓰고 나머지는 무시하므로 안전합니다.
-            
-            // 1. 소문자 (search_sdate)
+            // 날짜 파라미터 (큐텐 표준)
             params.append('search_sdate', sDate);
             params.append('search_edate', eDate);
             
-            // 2. 대문자 섞임 (search_Sdate) - 가장 유력!
-            params.append('search_Sdate', sDate);
-            params.append('search_Edate', eDate);
-            
-            // 3. 파스칼 표기 (SearchSdate) - PDF 문서 스타일
+            // 혹시 몰라 대문자 버전도 같이 보냄 (보험용)
             params.append('SearchSdate', sDate);
             params.append('SearchEdate', eDate);
         }
@@ -107,14 +100,13 @@ export default async function handler(request) {
       const response = await fetch(targetUrl, options);
       const text = await response.text();
 
-      // 성공 판별 (HTML이 아니고 JSON 형식이면 성공으로 간주)
       if (!text.includes('<html') && !text.includes('Can\'t find')) {
         try {
           const data = JSON.parse(text);
-          // 큐텐 에러 메시지(Please check...)가 포함되어 있으면 실패로 간주하고 다음 후보 시도
-          if (data.ResultMsg && data.ResultMsg.includes('Please check')) {
-             lastError = data.ResultMsg;
-             continue; // 다음 방식으로 재시도
+          // 에러 메시지 체크
+          if (data.ResultMsg && (data.ResultMsg.includes('check') || data.ResultMsg.includes('date'))) {
+             lastError = data.ResultMsg; // 에러 메시지 저장 후 다음 방식 시도
+             continue; 
           }
           
           return new Response(JSON.stringify(data), {
@@ -134,7 +126,7 @@ export default async function handler(request) {
 
   return new Response(JSON.stringify({ 
     error: 'API 호출 실패', 
-    detail: lastError || '큐텐 서버가 응답하지 않습니다.'
+    detail: lastError || '큐텐 서버 응답 없음'
   }), {
     status: 500,
     headers: { 'Content-Type': 'application/json' },
