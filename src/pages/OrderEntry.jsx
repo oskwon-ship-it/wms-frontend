@@ -44,71 +44,77 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐 판매내역을 조회합니다...`, 1);
+            message.loading(`큐텐(${apiRegion}) 주문을 수집합니다...`, 1);
 
-            // 서버(api/qoo10.js)가 '판매내역조회(SellingReport)' 모드로 고정되어 있습니다.
-            // 파라미터를 최소화해서 보냅니다.
-            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}`);
+            // [변경] 최신 버전인 v3 API 사용
+            const methodName = 'ShippingBasic.GetShippingInfo_v3';
+
+            const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
             
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.error || `서버 통신 오류: ${response.status}`);
+                throw new Error(errData.error || `HTTP 오류: ${response.status}`);
             }
 
             const jsonData = await response.json();
 
-            // 성공 여부 확인
+            // ★★★ [디버깅 강화] 에러 메시지 원본 표시
+            // ResultCode가 0이 아니면 실패입니다.
             if (jsonData.ResultCode !== 0) {
-                throw new Error(jsonData.ResultMsg || `API 호출 실패 (${jsonData.ResultCode})`);
+                // ResultMsg가 없으면 전체 JSON을 문자열로 보여줍니다 (undefined 방지)
+                const errorMsg = jsonData.ResultMsg || JSON.stringify(jsonData);
+                throw new Error(`API 거절: ${errorMsg}`);
             }
 
             const qoo10Orders = jsonData.ResultObject || [];
             
             if (!qoo10Orders || qoo10Orders.length === 0) {
-                message.info('조회 기간 내 주문이 없습니다.');
+                message.info('신규 주문(배송요청)이 없습니다.');
                 setLoading(false);
                 return;
             }
 
-            // [데이터 변환] SellingReport의 응답 필드에 맞춰 매핑
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
                 platform_order_id: String(item.PackNo),
                 order_number: String(item.OrderNo),
-                customer: item.Receiver || item.ReceiverName,
+                customer: item.ReceiverName || item.Receiver,
                 product: item.ItemTitle,
                 barcode: item.SellerItemCode || 'BARCODE-MISSING',
                 quantity: parseInt(item.OrderQty, 10),
                 country_code: apiRegion, 
-                // 판매내역조회는 모든 상태가 다 오므로, '배송요청'인 것만 필터링하거나 일단 다 받아서 처리
-                status: item.ShippingStatus === '배송요청' || item.ShippingStatus === '2' ? '처리대기' : '확인필요',
+                status: '처리대기',
                 process_status: '접수',
                 shipping_type: '택배',
                 created_at: new Date()
             }));
 
-            // 처리대기(신규주문)만 저장하려면 여기서 필터링 가능
-            const newOrders = formattedOrders.filter(o => o.status === '처리대기');
+            const { error } = await supabase.from('orders').insert(formattedOrders);
+            if (error) throw error;
 
-            if (newOrders.length === 0) {
-                message.info('가져온 내역 중 신규 주문(배송요청)이 없습니다.');
-            } else {
-                const { error } = await supabase.from('orders').insert(newOrders);
-                if (error) throw error;
-                message.success(`성공! 신규 주문 ${newOrders.length}건을 저장했습니다.`);
-                setIsApiModalVisible(false);
-                fetchOrders();
-            }
+            message.success(`성공! 총 ${formattedOrders.length}건을 저장했습니다.`);
+            setIsApiModalVisible(false);
+            fetchOrders();
 
         } catch (error) {
             console.error('API Error:', error);
-            message.error(`연동 실패: ${error.message}`);
+            // 에러 내용을 화면에 길게 띄워줍니다
+            Modal.error({
+                title: '연동 실패',
+                content: (
+                    <div>
+                        <p>큐텐 서버 응답 내용:</p>
+                        <div style={{background:'#f5f5f5', padding:10, borderRadius:5, wordBreak:'break-all', maxHeight:200, overflow:'auto'}}>
+                            {error.message}
+                        </div>
+                    </div>
+                )
+            });
         } finally {
             setLoading(false);
         }
     };
 
-    // ... (이하 컬럼 및 렌더링 코드는 기존과 동일)
     const columns = [
         { title: '플랫폼', dataIndex: 'platform_name', width: 100, render: t => <Tag color="red">{t}</Tag> },
         { title: '국가', dataIndex: 'country_code', width: 80, render: t => <Tag color="blue">{t}</Tag> },
@@ -147,7 +153,7 @@ const OrderEntry = () => {
             
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
-                    <Alert message="판매내역 조회(SellingReport) 방식으로 접속합니다." type="info" showIcon />
+                    <Alert message="API v3 (최신 버전)로 접속을 시도합니다." type="success" showIcon />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
                 </div>
