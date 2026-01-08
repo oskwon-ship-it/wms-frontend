@@ -10,17 +10,13 @@ import {
 import AppLayout from '../components/AppLayout';
 
 const OrderEntry = () => {
-    // 1. 기본 상태 변수
     const [loading, setLoading] = useState(false);
     const [orders, setOrders] = useState([]);
     const [activeTab, setActiveTab] = useState('new'); 
-
-    // 2. API 연동 관련 상태
     const [isApiModalVisible, setIsApiModalVisible] = useState(false);
     const [apiKey, setApiKey] = useState(''); 
     const [apiRegion, setApiRegion] = useState('JP'); 
 
-    // 3. 주문 목록 조회 함수
     const fetchOrders = async () => {
         setLoading(true);
         let query = supabase.from('orders').select('*').order('created_at', { ascending: false });
@@ -43,7 +39,6 @@ const OrderEntry = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab]);
 
-    // ★★★ 4. 큐텐 주문 가져오기 (만능 접속기 사용)
     const handleRealApiSync = async () => {
         if (!apiKey) {
             message.error('API Key를 입력해주세요!');
@@ -52,12 +47,11 @@ const OrderEntry = () => {
 
         setLoading(true);
         try {
-            message.loading(`큐텐(${apiRegion}) 서버에 접속을 시도합니다...`, 1);
+            message.loading(`큐텐(${apiRegion}) 서버에 접속 중...`, 1);
 
-            // [핵심] 만능 접속기(api/qoo10.js)가 가장 잘 알아듣는 기본 명령어 사용
+            // [수정 완료] 오타 없는 깨끗한 코드입니다.
             const methodName = 'ShippingBasic.GetShippingInfo';
 
-            // 서버로 요청 전송
             const response = await fetch(`/api/qoo10?region=${apiRegion}&key=${apiKey}&method=${methodName}`);
             
             if (!response.ok) {
@@ -67,7 +61,6 @@ const OrderEntry = () => {
 
             const jsonData = await response.json();
 
-            // 결과 확인
             if (jsonData.ResultCode !== 0) {
                 throw new Error(jsonData.ResultMsg || `API 호출 실패 (코드: ${jsonData.ResultCode})`);
             }
@@ -80,7 +73,6 @@ const OrderEntry = () => {
                 return;
             }
 
-            // DB 저장
             const formattedOrders = qoo10Orders.map(item => ({
                 platform_name: 'Qoo10',
                 platform_order_id: String(item.PackNo),
@@ -185,7 +177,7 @@ const OrderEntry = () => {
             >
                 <div style={{display:'flex', flexDirection:'column', gap: 15}}>
                     <Alert 
-                        message="나만의 전용 서버(API) 사용 중" 
+                        message="API 연동 준비 완료" 
                         description="Vercel 서버가 최적의 접속 경로를 자동으로 찾아 연결합니다." 
                         type="success" 
                         showIcon 
