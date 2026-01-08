@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 import { Table, Button, Input, DatePicker, Space, Tag, Tabs, message, Card, Modal, Alert } from 'antd';
 import { 
     SearchOutlined, ReloadOutlined, CloudDownloadOutlined, 
-    KeyOutlined, CheckCircleOutlined 
+    KeyOutlined, CheckCircleOutlined, ThunderboltOutlined
 } from '@ant-design/icons';
 import AppLayout from '../components/AppLayout';
 
@@ -34,7 +34,7 @@ const OrderEntry = () => {
         }
 
         setLoading(true);
-        message.loading("큐텐 주문을 가져오는 중...", 1);
+        message.loading("큐텐 최신 API(v3)로 주문을 수집합니다...", 1);
 
         try {
             const response = await fetch(`/api/qoo10?key=${apiKey}`);
@@ -50,33 +50,35 @@ const OrderEntry = () => {
                 return;
             }
 
-            // 2. 데이터 구조 평탄화 (복잡한 괄호 제거)
+            // 2. 데이터 추출 (v3는 보통 ResultObject에 깔끔하게 줍니다)
             let qoo10Orders = [];
             const rawData = jsonData.data;
 
             if (rawData.ResultObject) {
                 qoo10Orders = rawData.ResultObject;
             } else if (Array.isArray(rawData)) {
-                // [[[]]] 같은 구조를 한 방에 폄
-                qoo10Orders = rawData.flat(Infinity).filter(item => item && (item.OrderNo || item.PackNo));
+                qoo10Orders = rawData.flat(Infinity).filter(item => item && item.OrderNo);
             }
 
             // 3. 결과 처리
-            if (qoo10Orders.length === 0) {
+            if (!qoo10Orders || qoo10Orders.length === 0) {
                 Modal.info({
-                    title: '연동 성공 ✅',
-                    content: 'API 연결에 성공했습니다! 다만, 최근 30일간 조회된 주문 내역이 없습니다.'
+                    title: '연동 성공 (신규 주문 없음)',
+                    content: 'v3 API 연결에 성공했습니다! 다만 현재 배송요청(Stat:2) 상태인 주문이 없습니다.'
                 });
             } else {
-                // 4. DB 저장
+                // 4. DB 저장 (v3 데이터 필드 매핑)
                 const formattedOrders = qoo10Orders.map(item => ({
                     platform_name: 'Qoo10',
                     platform_order_id: String(item.PackNo || item.OrderNo),
                     order_number: String(item.OrderNo),
-                    customer: item.ReceiverName || item.Receiver || '고객',
+                    customer: item.ReceiverName || item.Receiver || '고객', // v3는 ReceiverName일 확률 높음
                     product: item.ItemTitle || item.ItemName,
                     barcode: item.SellerItemCode || 'BARCODE-MISSING',
                     quantity: parseInt(item.OrderQty || item.Qty || 1, 10),
+                    // v3는 주소가 명확하게 옵니다
+                    shipping_address: item.ReceiverAddr || item.ShippingAddr || '',
+                    shipping_memo: item.ShippingMsg || '',
                     country_code: 'JP', 
                     status: '처리대기',
                     process_status: '접수',
@@ -87,10 +89,10 @@ const OrderEntry = () => {
                 await supabase.from('orders').insert(formattedOrders);
                 
                 Modal.success({
-                    title: '주문 수집 완료 🎉',
-                    content: `총 ${formattedOrders.length}건의 주문을 성공적으로 가져왔습니다!`
+                    title: 'v3 주문 수집 성공! 🎉',
+                    content: `총 ${formattedOrders.length}건의 신규 주문을 가져왔습니다.`
                 });
-                fetchOrders(); // 목록 새로고침
+                fetchOrders(); 
             }
             setIsApiModalVisible(false);
 
@@ -140,11 +142,11 @@ const OrderEntry = () => {
             <Modal title="큐텐 주문 가져오기" open={isApiModalVisible} onCancel={() => setIsApiModalVisible(false)} footer={null}>
                 <div style={{display:'flex', flexDirection:'column', gap: 15, padding: '20px 0'}}>
                     <Alert 
-                        message="API 연결 성공" 
-                        description="이제 버튼만 누르면 최근 30일 주문을 자동으로 가져옵니다."
+                        message="최신 API(v3) 적용 완료" 
+                        description="사장님이 찾으신 v3 문서 규격대로 연결합니다. (가장 정확한 방식)"
                         type="success" 
                         showIcon 
-                        icon={<CheckCircleOutlined />}
+                        icon={<ThunderboltOutlined />}
                     />
                     <Input.Password prefix={<KeyOutlined />} placeholder="API Key 입력" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
                     <Button type="primary" block onClick={handleRealApiSync} loading={loading} danger>주문 가져오기 실행</Button>
