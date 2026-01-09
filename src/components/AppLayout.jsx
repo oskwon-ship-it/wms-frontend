@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Layout, Menu, Button, theme, message, Spin, Tag } from 'antd';
 import { 
   LogoutOutlined, AppstoreOutlined, 
-  FileTextOutlined, RocketOutlined, ShopOutlined, 
-  ImportOutlined, SettingOutlined, HistoryOutlined,
+  RocketOutlined, ShopOutlined, 
+  ImportOutlined, SettingOutlined,
   GlobalOutlined 
-} from '@ant-design/icons';
+} from '@ant-design/icons'; // FileTextOutlined, HistoryOutlined 제거
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 
@@ -32,7 +32,6 @@ const AppLayout = ({ children }) => {
             }
             setUserEmail(user.email);
             
-            // ★ 관리자 판별 로직 (사장님 이메일)
             const adminAuth = user.email === 'kos@cbg.com'; 
             setIsAdmin(adminAuth);
 
@@ -54,13 +53,11 @@ const AppLayout = ({ children }) => {
         message.success('로그아웃 되었습니다.');
     };
 
-    // 메뉴 구성 (고객 vs 관리자)
     const getMenuItems = () => {
         const commonItems = [
             { key: '/dashboard', icon: <AppstoreOutlined />, label: '대시보드' },
         ];
 
-        // 1. 관리자용 메뉴 (3PL 업무)
         if (isAdmin) {
             return [
                 ...commonItems,
@@ -83,12 +80,10 @@ const AppLayout = ({ children }) => {
             ];
         }
 
-        // 2. 고객용 메뉴 (셀러 업무)
         return [
             ...commonItems,
             { type: 'divider' },
             { key: 'seller-section', label: '쇼핑몰 관리', type: 'group', children: [
-                // ★ 여기가 핵심: 고객이 주문을 긁어오는 곳
                 { key: '/order-entry', icon: <GlobalOutlined style={{color:'#ff4d4f'}} />, label: '주문 수집 (Qoo10/Shopee)' },
             ]},
             { key: 'inventory-section', label: '물류 조회', type: 'group', children: [
